@@ -147,9 +147,9 @@ class Decentralized_Game:
                                   np.floor(self.board_length / gp.SQUARE_STEP).astype(int)], dtype=bool)]
 
         ap_pos = np.floor(self.environment.ap_position / gp.SQUARE_STEP).astype(int)
-        observation[0][ap_pos] = True
+        observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
         user_pos = np.floor(self.environment.user_position / gp.SQUARE_STEP).astype(int)
-        observation[1][user_pos] = True
+        observation[1][user_pos[:, 0], user_pos[:, 1]] = True
 
         self.observation = observation
         return self.observation

@@ -71,7 +71,7 @@ class Connection_Graph:
             if hex_action is None:
                 self.decision[ap] = 0
             else:
-                connected_ap = np.where(self.connection_graph[ap] == 1)
+                connected_ap = np.where(self.connection_graph[ap] == 1)[0]
                 coop_indi = self.neighbor_indices(ap)[hex_action]
                 if np.all(coop_indi == -1):
                     self.decision[ap] = 0
@@ -91,12 +91,12 @@ class Connection_Graph:
         self.hand_shake_result = self.hand_shake_result + np.transpose(self.hand_shake_result)
 
         for ap, ap_action in enumerate(ap_actions):
-            temp = np.where(self.hand_shake_result[ap] == 1)
+            temp = np.where(self.hand_shake_result[ap] == 1)[0]
             if len(temp) == 2 and self.hand_shake_result[temp[0]][temp[1]] == 1:
                 self.hand_shake_result[ap][temp] = 2
                 # confirm the circles
                 continue
-            temp = np.where(self.hand_shake_result[ap] == 1.5)
+            temp = np.where(self.hand_shake_result[ap] == 1.5)[0]
             if len(temp) == 2 and self.hand_shake_result[temp[0]][temp[1]] == 0:
                 self.hand_shake_result[ap][temp] = 2
                 self.hand_shake_result[temp[0]][[ap, temp[1]]] = 2

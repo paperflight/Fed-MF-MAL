@@ -216,14 +216,16 @@ class Decentralized_Game:
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr
-        sinr_clip[sinr_clip > 20] = 0
-        sinr_clip[sinr_clip > 8] = 1
-        sinr_clip = sinr_clip / 4
+        sinr_clip[sinr_clip > 8] = 8
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 10
         ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
                               - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
-        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int(gp.ACCESS_POINTS_FIELD - 1 / 2), axis=2)
+        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
         ap_distribute_reward = ap_observe_relation * sinr_clip
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / np.sum(ap_observe_relation, axis=1)  # normalization
+        normalized_factor = np.sum(ap_observe_relation, axis=1)
+        normalized_factor[normalized_factor == 0] = 1
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
+        # normalization
         return ap_distribute_reward
 
     def close(self):

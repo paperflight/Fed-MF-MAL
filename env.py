@@ -149,7 +149,12 @@ class Channel:
         else:
             raise ValueError("Unknown User Distribution Type")
         if self.ap_distri_type == "Hex":
-            self.ap_number = self.ap_number
+            calculated_ap = (int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1) * \
+                             (int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
+                              (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)
+            if calculated_ap != self.ap_number:
+                raise ImportWarning("The actual ap number for Hex is "+str(calculated_ap) + ". Please Check input.")
+            self.ap_number = calculated_ap
         else:
             raise ValueError("Unknown AP Distribution Type")
         self.dist_matrix = np.zeros([self.ap_number, self.user_number])
@@ -166,8 +171,11 @@ class Channel:
         self.user_position = \
             np.asarray([np.random.rand(2) * [self.area_size_w, self.area_size_c] for _ in range(self.user_number)])
         self.ap_position = \
-            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 1 + x % 2)] for x in range(int(np.sqrt(self.ap_number)))
-                        for y in range(int(np.sqrt(self.ap_number)))]) * self.ap_distri_space
+            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 1 + x % 2)]
+                        for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
+                        for y in range(int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
+                                       (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)]) \
+            * self.ap_distri_space
         self.dist_matrix = ssd.cdist(self.ap_position, self.user_position)
         self.dist_matrix[np.where(self.dist_matrix < 1)] += 1
         self.coop_graph = Connection_Graph(self.ap_position, self.connect_threshold)
@@ -236,7 +244,10 @@ class Channel:
     def random_action(self):
         if not gp.DEBUG:
             raise TypeError("Function only called in Debug Mode")
-        self.coop_graph.hand_shake(np.random.randint(13, size=self.ap_number))
+        # self.coop_graph.hand_shake(np.random.randint(13, size=self.ap_number))
+        # self.coop_graph.hand_shake(np.ones(self.ap_number, dtype=int) * 12)
+        self.coop_graph.hand_shake(-np.power(-1, np.arange(self.ap_number, dtype=int)) * 3 + 3)
+        # self.coop_graph.hand_shake(np.random.randint(6, size=self.ap_number) * 2 + 1)
         self.coop_decision = self.coop_graph.hand_shake_result
 
     def set_action(self, ap_action):
@@ -261,6 +272,28 @@ class Channel:
         precoder = self.precoder_ap_user()
         mask: np.ndarray = self.coop_decision - \
                            0.5 * np.ones(self.coop_decision.shape) * np.sum(self.coop_decision, axis=1, keepdims=True,
+                                                                            dtype=bool)
+        mask = mask * 2  # convert to -1, 0, 1
+        signal_mask, interference_mask = np.copy(mask), np.copy(mask)
+        signal_mask[signal_mask < 0] = 0
+        interference_mask[interference_mask > 0] = 0
+        precoder *= signal_mask
+        precoder[precoder == 0] = 1
+        self.channel = self.channel * np.square(np.absolute(precoder * self.small_scale_fading))
+        signal = self.channel * signal_mask
+        interference = self.channel * interference_mask
+        sinr = np.sum(signal, axis=0) / (-np.sum(interference, axis=0) +
+                                         np.sum(gp.NOISE_THETA * np.square(np.absolute(precoder)) * signal_mask, axis=0)
+                                         / np.sum(signal_mask, axis=0))
+        if gp.LOG_LEVEL >= 2:
+            myplt.table_print_color(sinr, "SINR for UE", gp.UE_COLOR)
+        return sinr
+
+    def sinr_ap_user_noncoop(self):
+        self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
+        precoder = self.precoder_ap_user()
+        mask: np.ndarray = self.association_result - \
+                           0.5 * np.ones(self.coop_decision.shape) * np.sum(self.association_result, axis=1, keepdims=True,
                                                                             dtype=bool)
         mask = mask * 2  # convert to -1, 0, 1
         signal_mask, interference_mask = np.copy(mask), np.copy(mask)
@@ -307,12 +340,33 @@ class Channel:
                                                              axis=1))), axis=1), "SINR_DISTANCE", gp.UE_COLOR)
         return sinr
 
+    def decentralized_reward(self, sinr):
+        sinr_clip = sinr
+        # sinr_clip[sinr_clip > 100] = 0
+        sinr_clip[sinr_clip > 8] = 8
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 10
+        # sinr_x = self.sinr_ap_user_noncoop()
+        # sinr_x[np.where(sinr_clip == 0)] = 0
+        # # sinr_x[sinr_x > 8] = 8
+        # sinr_x = np.log10(sinr_x / 8 + 1) * 2
+        # sinr_clip = sinr_clip - sinr_x
+        ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
+                              - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
+        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
+        ap_distribute_reward = ap_observe_relation * sinr_clip
+        normalized_factor = np.sum(ap_observe_relation, axis=1)
+        normalized_factor[normalized_factor == 0] = 1
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
+        # normalization
+        return ap_distribute_reward
+
 
 if __name__ == "__main__":
-    x = Channel(["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
-                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
+    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.LENGTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
+                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, None], "Stronger First",
                 13 * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
     #             13 * 2 * np.sqrt(3) + 5
-    print(x.test_sinr())
+    res = x.decentralized_reward(x.test_sinr())
+    print(np.mean(res))

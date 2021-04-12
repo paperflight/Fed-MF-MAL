@@ -180,7 +180,7 @@ class Decentralized_Game:
             action_re = np.array(action) * 2 + 1
 
         self.environment.set_action(action_re)
-        reward = self.decentralized_reward_directional(self.environment.sinr_calculation(), action_re)
+        reward = self.decentralized_reward(self.environment.sinr_calculation())
 
         return ap_state, action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
@@ -210,7 +210,7 @@ class Decentralized_Game:
             action_re = np.array(action) * 2 + 1
 
         self.environment.set_action(action_re)
-        reward = self.decentralized_reward_directional(self.environment.sinr_calculation(), action_re)
+        reward = self.decentralized_reward(self.environment.sinr_calculation())
 
         return ap_state, action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 

@@ -25,9 +25,10 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
         state, action, reward, done = new_game.step_p(c_pipe)  # Step
         reward_sum_aps.append(reward)
 
-    reward_sum_aps = np.mean(reward_sum_aps, axis=0)
+    # reward_sum_aps = np.mean(reward_sum_aps, axis=0)
+    reward_sum_aps = np.array(reward_sum_aps)
     for index in range(new_game.environment.ap_number):
-        train_examples_aps[index].append(reward_sum_aps[index])
+        train_examples_aps[index].extend(reward_sum_aps[:, index])
     train_history_aps.append(train_examples_aps)
 
     for index in range(new_game.environment.ap_number):
@@ -54,10 +55,11 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
         reward_sum.append(reward)
     env.close()
 
-    reward_sum = np.mean(reward_sum, axis=0)
+    # reward_sum = np.mean(reward_sum, axis=0)
     print(reward_sum)
+    reward_sum = np.array(reward_sum)
     for index in range(env.environment.ap_number):
-        T_rewards_aps[index].append(reward_sum[index])
+        T_rewards_aps[index].extend(reward_sum[:, index])
 
     # Test Q-values over validation memory
     for index, val_mems in enumerate(val_mem_aps):

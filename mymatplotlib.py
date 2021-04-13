@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.patches import RegularPolygon
 import matplotlib.gridspec as gridspec
 import numpy as np
 from termcolor import colored
@@ -142,3 +143,38 @@ def table_print_color(table: np.ndarray, title: str, color='red'):
         else:
             print(colored(tabulate(np.insert(table, 0, indi_r, axis=1),
                                    headers=['ID'] + [str(k) for k in indi_c[0]], tablefmt="grid"), color))
+
+
+def plot_result_hexagon(ap_position, action, coop_res):
+    color_map = np.array([[None] * 4] * len(action))
+    cmap = plt.get_cmap('tab20')
+
+    color_ind = 0
+    for ind in range(len(action)):
+        if color_map[ind, 0] is None:
+            coop_ind = np.where(coop_res[ind] > 0)[0]
+            if coop_ind.shape[0] != 0:
+                color_map[coop_ind] = cmap(color_ind/len(action))
+            color_ind += 1
+        else:
+            continue
+
+    fig, ax = plt.subplots(1)
+    ax.set_aspect('equal')
+
+    # Add some coloured hexagons
+    for x, y, c, l in zip(ap_position[:, 0], ap_position[:, 1], color_map, action):  # matplotlib understands lower case words for colours
+        hex = RegularPolygon((x, y), numVertices=6, radius=gp.ACCESSPOINT_SPACE * 2,
+                             orientation=np.radians(30),
+                             facecolor=(c[0], c[1], c[2], c[3]), alpha=0.2, edgecolor='k')
+        ax.add_patch(hex)
+        # Also add a text label
+        action_angel = (90 - l * 30) / 180 * np.pi
+        plt.arrow(x, y, np.cos(action_angel) * gp.ACCESSPOINT_SPACE, np.sin(action_angel) * gp.ACCESSPOINT_SPACE)
+        ax.text(x, y + 0.2, str(l), ha='center', va='center', size=20)
+
+    # Also add scatter points in hexagon centres
+    ax.scatter(ap_position[:, 0], ap_position[:, 1], c=[(col[0], col[1], col[2], col[3]) for col in color_map], alpha=0.5)
+
+    plt.show()
+    plt.close()

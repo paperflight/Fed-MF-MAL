@@ -5,6 +5,7 @@ import env
 import torch
 import time
 import copy as cp
+import mymatplotlib as myplt
 from collections import defaultdict, deque
 import typing
 
@@ -80,7 +81,7 @@ class Decentralized_Game:
 
     @staticmethod
     def get_action_size():
-        return 6
+        return 13
 
     def plot_grid_map(self, position_list):
         grid_map = np.zeros([int(self.board_length / gp.SQUARE_STEP), int(self.board_length / gp.SQUARE_STEP)],
@@ -171,16 +172,19 @@ class Decentralized_Game:
         action = []
         if accesspoint is None:
             action = np.random.randint(6, size=self.environment.ap_number)
-            action_re = action * 2 + 1
+            # action_re = action * 2 + 1
         else:
             for index in range(self.environment.ap_number):
                 action.append(accesspoint[index].act_e_greedy(ap_state[index], self.available_ap[index],
                                                               epsilon, self.args.action_selection))
                 # Choose an action greedily (with noisy weights)
-            action_re = np.array(action) * 2 + 1
+            # action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action_re)
-        reward = self.decentralized_reward(self.environment.sinr_calculation())
+        self.environment.set_action(action)
+        reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
+        if np.random.rand() < 0.001:
+            print(reward, action)
+            myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
 
         return ap_state, action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
@@ -201,16 +205,16 @@ class Decentralized_Game:
         action = []
         if accesspoint is None:
             action = np.random.randint(6, size=self.environment.ap_number)
-            action_re = action * 2 + 1
+            # action_re = action * 2 + 1
         else:
             for index, pipe in enumerate(accesspoint):
                 pipe.send((ap_state[index], self.available_ap[index]))
                 action.append(pipe.recv())
                 # Choose an action greedily (with noisy weights)
-            action_re = np.array(action) * 2 + 1
+            # action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action_re)
-        reward = self.decentralized_reward(self.environment.sinr_calculation())
+        self.environment.set_action(action)
+        reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
 
         return ap_state, action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
@@ -226,12 +230,29 @@ class Decentralized_Game:
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
+        return ap_distribute_reward - 0.5
+
+    def decentralized_reward_exclude_central(self, sinr):
+        sinr_clip = sinr
+        sinr_clip[sinr_clip > 8] = 8
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
+        ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
+                              - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2),
+                                         axis=2)
+        ap_observe_relation_cet = np.any(
+            np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
+        ap_distribute_reward = ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
+        normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, ap_observe_relation_cet), axis=1)
+        normalized_factor[normalized_factor == 0] = 1
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
+        # normalization
         return ap_distribute_reward
 
     def decentralized_reward_directional(self, sinr, action):
         sinr_clip = sinr
         sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 10
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
         ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
                               - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
         ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 0], ap_observe_relation[:, :, 1]) * 180 / np.pi

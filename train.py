@@ -49,8 +49,8 @@ parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help
 parser.add_argument('--noisy-std', type=float, default=0.5, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
 parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=-2, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=2, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--V-min', type=float, default=-0.5, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=0.5, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')
@@ -177,7 +177,7 @@ def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode)
 
 # Environment
 env = Env(args)
-action_space = 6
+action_space = env.get_action_size()
 
 # Agent
 dqn = []
@@ -266,14 +266,14 @@ else:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
             if not reward[_] == 0:
                 mem_aps[_].append(state[_], action[_], reward[_], done)  # Append transition to memory
-            for direction in range(3):
-                obs = state[_]
-                act = action[_]
-                obs = torch.rot90(obs, direction, [1, 2])
-                if act != 12:
-                    act = (direction * 3 + action[_]) % action_space
-                if not reward[_] == 0:
-                    mem_aps[_].append(obs, act, reward[_], done)
+            obs = state[_]
+            act = action[_]
+            obs = torch.rot90(obs, 2, [1, 2])
+            if act != 12 and not reward[_] == 0:
+                act = (-6 + action[_] + 12) % 12
+                mem_aps[_].append(obs, act, reward[_], done)
+                mem_aps[_].append(torch.flip(obs, [1]), (6 - act % 6) + 6 * (act // 6), reward[_], done)
+                mem_aps[_].append(torch.flip(state[_], [1]), (6 - action[_] % 6) + 6 * (action[_] // 6), reward[_], done)
                 # append rotated observation for data reinforcement
 
         if T >= args.learn_start:

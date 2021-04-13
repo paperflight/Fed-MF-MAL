@@ -227,7 +227,7 @@ class Channel:
         self.coop_decision += np.eye(self.coop_decision.shape[0], dtype=int)
         association_coop_result = np.zeros(self.association_result.shape)
         for ap in range(self.association_result.shape[0]):
-            association_coop_result[ap] = np.sum(self.association_result[np.where(self.coop_decision[ap] == 1)], axis=0)
+            association_coop_result[ap] = np.sum(self.association_result[np.where(self.coop_decision[ap] == 1)[0]], axis=0)
         if gp.DEBUG and np.max(association_coop_result) > 1 and np.any(np.sum(association_coop_result, axis=0)):
             raise ValueError("Replicant Association or Unallocated User")
         self.coop_decision = association_coop_result
@@ -241,13 +241,23 @@ class Channel:
             return (np.linalg.inv(np.transpose(a.conj()) * a) * np.transpose(a.conj()))[0, 0]
         return np.linalg.inv(np.transpose(a.conj()) * a) * np.transpose(a.conj())
 
-    def random_action(self):
+    def random_action(self, action_type):
         if not gp.DEBUG:
             raise TypeError("Function only called in Debug Mode")
-        # action = np.random.randint(13, size=self.ap_number)
-        # action = np.ones(self.ap_number, dtype=int) * 12
-        action = -np.power(-1, np.arange(self.ap_number, dtype=int)) * 3 + 3
-        # action = np.random.randint(6, size=self.ap_number) * 2 + 1
+        if action_type == 'random':
+            action = np.random.randint(13, size=self.ap_number)
+        elif action_type == 'isolate':
+            action = np.ones(self.ap_number, dtype=int) * 12
+        elif action_type == 'updown':
+            action = -np.power(-1, np.arange(self.ap_number, dtype=int)) * 3 + 3
+        elif action_type == 'double':
+            action = np.random.randint(6, size=self.ap_number) * 2 + 1
+        elif action_type == 'ones':
+            action = np.ones(self.ap_number, dtype=int) * 9
+        elif action_type == 'fixed':
+            action = np.array([1, 5, 3, 1, 3, 11, 7, 9, 1, 5, 3, 1, 3, 11, 7, 9, 1, 5, 3, 1])
+        else:
+            raise TypeError("No such action type")
         self.coop_graph.hand_shake(action)
         self.coop_decision = self.coop_graph.hand_shake_result
         return action
@@ -325,14 +335,14 @@ class Channel:
         self.map_association_with_coop_decision()
         return self.sinr_ap_user()
 
-    def test_sinr(self):
+    def test_sinr(self, action_type):
         self.number_init()
         self.location_init()
         self.calculate_power_allocation()
         self.calculate_large_scale_fading()
         self.calculate_small_scale_fading()
         self.calculate_association()
-        action = self.random_action()
+        action = self.random_action(action_type)
         self.map_association_with_coop_decision()
         sinr = self.sinr_ap_user()
         if gp.LOG_LEVEL >= 2:
@@ -346,7 +356,7 @@ class Channel:
         sinr_clip = sinr
         # sinr_clip[sinr_clip > 100] = 0
         sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 10
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
         # sinr_x = self.sinr_ap_user_noncoop()
         # sinr_x[np.where(sinr_clip == 0)] = 0
         # # sinr_x[sinr_x > 8] = 8
@@ -362,11 +372,26 @@ class Channel:
         # normalization
         return ap_distribute_reward
 
+    def decentralized_reward_exclude_central(self, sinr):
+        sinr_clip = sinr
+        sinr_clip[sinr_clip > 8] = 8
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
+        ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
+                              - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
+        ap_observe_relation_cet = np.any(np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
+        ap_distribute_reward = ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
+        normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, ap_observe_relation_cet), axis=1)
+        normalized_factor[normalized_factor == 0] = 1
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
+        # normalization
+        return ap_distribute_reward
+
     def decentralized_reward_directional(self, sinr, action):
         sinr_clip = sinr
         # sinr_clip[sinr_clip > 100] = 0
         sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 10
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
         # sinr_x = self.sinr_ap_user_noncoop()
         # sinr_x[np.where(sinr_clip == 0)] = 0
         # # sinr_x[sinr_x > 8] = 8
@@ -388,11 +413,23 @@ class Channel:
 
 if __name__ == "__main__":
     x = Channel(["square", gp.LENGTH_OF_FIELD, gp.LENGTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
-                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, None], "Stronger First",
+                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
                 13 * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
     #             13 * 2 * np.sqrt(3) + 5
-    sinr, action = x.test_sinr()
-    res = x.decentralized_reward_directional(sinr, action)
-    print(res, action)
+    res_avg = np.zeros(20)
+    for _ in range(1000):
+        sinr, action = x.test_sinr('updown')
+        res = x.decentralized_reward_exclude_central(sinr)
+        res_avg += res
+    res_avg /= 1000
+    print(res_avg)
+    res_avg1 = np.zeros(20)
+    for _ in range(1000):
+        sinr, action = x.test_sinr('ones')
+        res = x.decentralized_reward_exclude_central(sinr)
+        res_avg1 += res
+    res_avg1 /= 1000
+    print(res_avg1)
+    print(res_avg - res_avg1)

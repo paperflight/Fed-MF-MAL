@@ -265,15 +265,15 @@ else:
             if args.reward_clip > 0:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
             if not reward[_] == 0:
-                mem_aps[_].append(state[_], action[_], reward[_], done)  # Append transition to memory
+                mem_aps[_].append(state[_], int(action[_] - 1)/2, reward[_], done)  # Append transition to memory
             obs = state[_]
             act = action[_]
             obs = torch.rot90(obs, 2, [1, 2])
             if act != 12 and not reward[_] == 0:
                 act = (-6 + action[_] + 12) % 12
-                mem_aps[_].append(obs, act, reward[_], done)
-                mem_aps[_].append(torch.flip(obs, [1]), (6 - act % 6) + 6 * (act // 6), reward[_], done)
-                mem_aps[_].append(torch.flip(state[_], [1]), (6 - action[_] % 6) + 6 * (action[_] // 6), reward[_], done)
+                mem_aps[_].append(obs, (act - 1)/2, reward[_], done)
+                mem_aps[_].append(torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6) -1)/2, reward[_], done)
+                mem_aps[_].append(torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6) -1)/2, reward[_], done)
                 # append rotated observation for data reinforcement
 
         if T >= args.learn_start:

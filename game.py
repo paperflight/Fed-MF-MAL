@@ -81,7 +81,7 @@ class Decentralized_Game:
 
     @staticmethod
     def get_action_size():
-        return 13
+        return 6
 
     def plot_grid_map(self, position_list):
         grid_map = np.zeros([int(self.board_length / gp.SQUARE_STEP), int(self.board_length / gp.SQUARE_STEP)],
@@ -172,21 +172,21 @@ class Decentralized_Game:
         action = []
         if accesspoint is None:
             action = np.random.randint(6, size=self.environment.ap_number)
-            # action_re = action * 2 + 1
+            action_re = action * 2 + 1
         else:
             for index in range(self.environment.ap_number):
                 action.append(accesspoint[index].act_e_greedy(ap_state[index], self.available_ap[index],
                                                               epsilon, self.args.action_selection))
                 # Choose an action greedily (with noisy weights)
-            # action_re = np.array(action) * 2 + 1
+            action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action)
+        self.environment.set_action(action_re)
         reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
         if np.random.rand() < 0.001:
             print(reward, action)
             myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
 
-        return ap_state, action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action_re, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -205,18 +205,18 @@ class Decentralized_Game:
         action = []
         if accesspoint is None:
             action = np.random.randint(6, size=self.environment.ap_number)
-            # action_re = action * 2 + 1
+            action_re = action * 2 + 1
         else:
             for index, pipe in enumerate(accesspoint):
                 pipe.send((ap_state[index], self.available_ap[index]))
                 action.append(pipe.recv())
                 # Choose an action greedily (with noisy weights)
-            # action_re = np.array(action) * 2 + 1
+            action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action)
+        self.environment.set_action(action_re)
         reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
 
-        return ap_state, action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action_re, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr

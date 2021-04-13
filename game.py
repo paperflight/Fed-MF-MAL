@@ -63,7 +63,9 @@ class Decentralized_Game:
         self.state_buffer = []
         self.scheduler_buffer = deque([], maxlen=self.args.history_length)
         self.history_buffer_length = args.history_length
-        self.available_ap = np.zeros(self.environment.ap_number, dtype=bool)
+        self.available_ap = []
+        for _ in range(self.environment.ap_number):
+            self.available_ap.append(np.ones(self.get_action_size(), dtype=bool))
         if args.history_length <= 1 and args.previous_action_observable:
             raise ValueError("Illegal setting avaliable previous action with less or equal than 1 history length")
         self.history_step = args.multi_step
@@ -128,7 +130,7 @@ class Decentralized_Game:
             res_obs = obs_decentral[:, int(a):int(b), int(c):int(d)]
 
             if res_obs[-1].any():
-                self.available_ap[ap_index] = True
+                self.available_ap[ap_index] = np.ones(self.get_action_size(), dtype=bool)
             aps_observation.append(res_obs)
         self.aps_observation = aps_observation
         # list ap: list uav: ndarray observation

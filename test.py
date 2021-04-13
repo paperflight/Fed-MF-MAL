@@ -56,7 +56,7 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
     env.close()
 
     # reward_sum = np.mean(reward_sum, axis=0)
-    print(reward_sum)
+    # print(reward_sum)
     reward_sum = np.array(reward_sum)
     for index in range(env.environment.ap_number):
         T_rewards_aps[index].extend(reward_sum[:, index])

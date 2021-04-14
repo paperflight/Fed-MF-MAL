@@ -4,6 +4,7 @@ import os
 import numpy as np
 import torch
 from torch import optim
+from scipy.special import softmax
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
@@ -102,7 +103,7 @@ class Agent:
         if action_type == 'greedy':
             return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state, available)
         elif action_type == 'boltzmann':
-            return self.act_boltzmann(state, torch.tensor(available))
+            return self.act_boltzmann(state, available)
         elif action_type == 'no_limit':
             return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state)
 
@@ -115,22 +116,12 @@ class Agent:
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
         res = []
+        res_policy = softmax(res_policy, axis=1)
         for i in range(sizeofres[0]):
-            action_probs = []
-            for _ in range(self.action_space):
-                try:
-                    val = np.exp((res_policy[i][_].item()) * 100)
-                except OverflowError:
-                    res.append(_)
-                    break
-                action_probs.append(val)
-            action_probs *= mask[i]
+            action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
-            if count == 0:
-                res.append(-1)
-            elif len(action_probs) == self.action_space:
-                action_probs = [x / count for x in action_probs]
-                res.append(np.random.choice(self.action_space, p=action_probs))
+            action_probs = np.array([x / count for x in action_probs])
+            res.append(np.random.choice(self.action_space, p=action_probs))
         if sizeofres[0] == 1:
             return res[0]
         return np.array(res)
@@ -172,7 +163,7 @@ class Agent:
 
     def learn(self, mem):
         # Sample transitions
-        idxs, states, actions, returns, next_states, nonterminals, weights = mem.sample(self.batch_size)
+        idxs, states, actions, avails, returns, next_states, nonterminals, weights = mem.sample(self.batch_size)
 
         # Calculate current state probabilities (online network noise already sampled)
         log_ps = self.online_net(states, log=True)  # Log probabilities log p(s_t, ·; θonline)
@@ -182,18 +173,15 @@ class Agent:
             # Calculate nth next state probabilities
             pns = self.online_net(next_states)  # Probabilities p(s_t+n, ·; θonline)
             dns = self.support.expand_as(pns) * pns  # Distribution d_t+n = (z, p(s_t+n, ·; θonline))
-            avail_list = []
-            for stat in next_states:
-                avail_list.append(np.array(self.fetch_avail(stat)))
             if self.action_type == 'greedy':
-                dns = dns.sum(2) * torch.tensor(np.array(avail_list))
-                for ind, avail in enumerate(avail_list):
+                dns = dns.sum(2) * avails
+                for ind, avail in enumerate(avails):
                     if not (avail == 0).all():
                         dns[ind, avail == 0] = (torch.min(dns[ind]) - 10)
                 argmax_indices_ns = dns.argmax(1)
                 # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
             elif self.action_type == 'boltzmann':
-                argmax_indices_ns = self.boltzmann(dns.sum(2), avail_list)
+                argmax_indices_ns = self.boltzmann(dns.sum(2), avails)
             elif self.action_type == 'no_limit':
                 argmax_indices_ns = dns.sum(2).argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise

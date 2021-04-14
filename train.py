@@ -56,7 +56,7 @@ parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', he
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')
 parser.add_argument('--epsilon-delta', type=float, default=0.0001, metavar='ep_d', help='Decreasing step of epsilon')
 # TODO: Set the ep carefully
-parser.add_argument('--action-selection', type=str, default='greedy', metavar='action_type',
+parser.add_argument('--action-selection', type=str, default='boltzmann', metavar='action_type',
                     choices=['greedy', 'boltzmann', 'no_limit'],
                     help='Type of action selection algorithm, 1: greedy, 2: boltzmann')
 parser.add_argument('--model', type=str, default=None, metavar='PARAM', help='Pretrained model (state dict)')
@@ -163,14 +163,13 @@ def save_memory(memory, memory_path, disable_bzip, scheduller_or_ap, index=-1):
 
 def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode):
     train_examples_aps = []
-    train_examples_sche = []
     for _ in range(env.environment.ap_number):
         train_examples_aps.append([])
     eps = 0
     while eps < episode:
-        state, action, reward, done_pp = new_game.step()  # Step
+        state, action, avail, reward, done_pp = new_game.step()  # Step
         for index_p, ele_p in enumerate(state):
-            train_examples_aps[index_p].append((ele_p, None, None, done_pp))
+            train_examples_aps[index_p].append((ele_p, None, None, None, done_pp))
         eps += 1
     train_history_aps_parallel.append(train_examples_aps)
     
@@ -214,9 +213,9 @@ for _ in range(env.environment.ap_number):
 if not gp.PARALLEL_EXICUSION:
     T, done = 0, False
     while T < args.evaluation_size:
-        state, action, reward, done = env.step()
+        state, action, avail, reward, done = env.step()
         for index, ele in enumerate(state):
-            val_mem_aps[index].append(ele, None, None, done)
+            val_mem_aps[index].append(ele, None, None, None, done)
         T += 1
 else:
     num_cores = min(multiprocessing.cpu_count(), gp.ALLOCATED_CORES) - 1
@@ -239,8 +238,8 @@ else:
 
         for res in train_history_aps:
             for index, memerys in enumerate(res):
-                for state, _, _, done in memerys:
-                    val_mem_aps[index].append(state, None, None, done)
+                for state, _, _, _, done in memerys:
+                    val_mem_aps[index].append(state, None, None, None, done)
 
 if args.evaluate:
     for index in range(env.environment.ap_number):
@@ -257,7 +256,7 @@ else:
             for _ in range(env.environment.ap_number):
                 dqn[_].reset_noise()
 
-        state, action, reward, done = env.step(dqn)
+        state, action, avail, reward, done = env.step(dqn)
         epsilon = epsilon - args.epsilon_delta
         epsilon = np.clip(epsilon, a_min=args.epsilon_min, a_max=args.epsilon_max)
 
@@ -265,15 +264,17 @@ else:
             if args.reward_clip > 0:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
             if not reward[_] == 0:
-                mem_aps[_].append(state[_], int(action[_] - 1)/2, reward[_], done)  # Append transition to memory
+                mem_aps[_].append(state[_], int(action[_] - 1)/2, avail[_], reward[_], done)  # Append transition to memory
             obs = state[_]
             act = action[_]
             obs = torch.rot90(obs, 2, [1, 2])
             if act != 12 and not reward[_] == 0:
                 act = (-6 + action[_] + 12) % 12
-                mem_aps[_].append(obs, (act - 1)/2, reward[_], done)
-                mem_aps[_].append(torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6) -1)/2, reward[_], done)
-                mem_aps[_].append(torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6) -1)/2, reward[_], done)
+                mem_aps[_].append(obs, (act - 1)/2, env.rot_avail(avail[_]), reward[_], done)
+                mem_aps[_].append(torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6) -1)/2,
+                                  env.flip_avail(env.rot_avail(avail[_])), reward[_], done)
+                mem_aps[_].append(torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6) -1)/2,
+                                  env.flip_avail(avail[_]), reward[_], done)
                 # append rotated observation for data reinforcement
 
         if T >= args.learn_start:

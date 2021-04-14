@@ -48,8 +48,19 @@ class Connection_Graph:
         indi[np.where(np.logical_or(indi < 0, indi >= self.ap_number))] = -1
         return indi
 
+    def calculate_action_mask(self):
+        avaliable_action = []
+        for ap in range(self.ap_number):
+            avaliable_action.append(np.ones(13, dtype=bool))
+        hex_action_indices_map = [[3], [3, 5], [5], [5, 4], [4], [4, 2], [2], [2, 0], [0], [0, 1], [1], [1, 3], None]
+        for ap in range(self.ap_number):
+            action_index = self.neighbor_indices(ap)
+            action_index = [action_index[temp] for temp in hex_action_indices_map]
+            action_avail = [np.all(action_ind != -1) for action_ind in action_index]
+            avaliable_action[ap][0:12] = action_avail[0:12]
+        return avaliable_action
+
     def hand_shake(self, ap_actions):
-        real_action = np.array(ap_actions)
         hex_action_indices_map = [[3], [3, 5], [5], [5, 4], [4], [4, 2], [2], [2, 0], [0], [0, 1], [1], [1, 3], None]
         #     /11-0---1\
         #   10          2
@@ -67,17 +78,15 @@ class Connection_Graph:
         #     2                type6 --- type7 --- type8
         # indices map, for six number in the connection graph
         self.decision = np.zeros(self.connection_graph.shape)
-        for ap, ap_action in enumerate(real_action):
+        for ap, ap_action in enumerate(ap_actions):
             hex_action = hex_action_indices_map[ap_action]
             if hex_action is None:
                 self.decision[ap] = 0
             else:
                 connected_ap = np.where(self.connection_graph[ap] == 1)[0]
                 coop_indi = self.neighbor_indices(ap)[hex_action]
-                while np.all(coop_indi == -1):
-                    ap_action = np.random.randint(0, 13)
-                    real_action[ap] = ap_action
-                    coop_indi = self.neighbor_indices(ap)[hex_action_indices_map[ap_action]]
+                if np.all(coop_indi == -1):
+                    raise ValueError("Impossible action here")
                     # roll for another action if current one is not applicapable
                 res_indi = coop_indi[coop_indi != -1]
                 if np.all(np.isin(res_indi, connected_ap)):
@@ -106,7 +115,6 @@ class Connection_Graph:
                 self.hand_shake_result[temp[1]][[ap, temp[0]]] = 2
                 # connect triangle connected aps
         self.hand_shake_result = np.floor(self.hand_shake_result / 1.5)
-        return real_action
 
 
 class Channel:
@@ -245,7 +253,7 @@ class Channel:
             return (np.linalg.inv(np.transpose(a.conj()) * a) * np.transpose(a.conj()))[0, 0]
         return np.linalg.inv(np.transpose(a.conj()) * a) * np.transpose(a.conj())
 
-    def random_action(self, action_type):
+    def random_action(self, action_type, avail):
         if not gp.DEBUG:
             raise TypeError("Function only called in Debug Mode")
         if action_type == 'random':
@@ -262,6 +270,10 @@ class Channel:
             action = np.array([1, 5, 3, 1, 3, 11, 7, 9, 1, 5, 3, 1, 3, 11, 7, 9, 1, 5, 3, 1])
         else:
             raise TypeError("No such action type")
+        for ap, ap_action in enumerate(avail):
+            while not ap_action[action[ap]]:
+                new_action = np.random.randint(0, 13)
+                action[ap] = new_action
         self.coop_graph.hand_shake(action)
         self.coop_decision = self.coop_graph.hand_shake_result
         return action
@@ -269,9 +281,8 @@ class Channel:
     def set_action(self, ap_action):
         if gp.DEBUG and len(ap_action) != self.ap_number:
             raise OverflowError("Unmatch action size")
-        real_action = self.coop_graph.hand_shake(ap_action)
+        self.coop_graph.hand_shake(ap_action)
         self.coop_decision = self.coop_graph.hand_shake_result
-        return real_action
 
     def precoder_ap_user(self):
         #  user_group: index of ap, users served by that ap within that ap
@@ -335,6 +346,7 @@ class Channel:
         self.calculate_large_scale_fading()
         self.calculate_small_scale_fading()
         self.calculate_association()
+        return self.coop_graph.calculate_action_mask()
 
     def sinr_calculation(self):
         self.map_association_with_coop_decision()
@@ -347,7 +359,8 @@ class Channel:
         self.calculate_large_scale_fading()
         self.calculate_small_scale_fading()
         self.calculate_association()
-        action = self.random_action(action_type)
+        avail = self.coop_graph.calculate_action_mask()
+        action = self.random_action(action_type, avail)
         self.map_association_with_coop_decision()
         sinr = self.sinr_ap_user()
         if gp.LOG_LEVEL >= 2:

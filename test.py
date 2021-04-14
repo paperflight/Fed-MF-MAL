@@ -22,7 +22,7 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
         train_examples_aps.append([])
 
     for _ in range(eps):
-        state, action, reward, done = new_game.step_p(c_pipe)  # Step
+        state, action, avail, reward, done = new_game.step_p(c_pipe)  # Step
         reward_sum_aps.append(reward)
 
     # reward_sum_aps = np.mean(reward_sum_aps, axis=0)
@@ -50,7 +50,7 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
     # Test performance over several episodes
     reward_sum, done = [], True
     for _ in range(args.evaluation_episodes):
-        state, action, reward, done = env.step(dqn)
+        state, action, avail, reward, done = env.step(dqn)
 
         reward_sum.append(reward)
     env.close()

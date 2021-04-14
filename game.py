@@ -63,9 +63,6 @@ class Decentralized_Game:
         self.state_buffer = []
         self.scheduler_buffer = deque([], maxlen=self.args.history_length)
         self.history_buffer_length = args.history_length
-        self.available_ap = []
-        for _ in range(self.environment.ap_number):
-            self.available_ap.append(np.ones(self.get_action_size(), dtype=bool))
         if args.history_length <= 1 and args.previous_action_observable:
             raise ValueError("Illegal setting avaliable previous action with less or equal than 1 history length")
         self.history_step = args.multi_step
@@ -126,8 +123,6 @@ class Decentralized_Game:
             d = math.floor(aps[1] / gp.SQUARE_STEP) + pad_width + self.one_side_length + 1
             res_obs = obs_decentral[:, int(a):int(b), int(c):int(d)]
 
-            if res_obs[-1].any():
-                self.available_ap[ap_index] = np.ones(self.get_action_size(), dtype=bool)
             aps_observation.append(res_obs)
         self.aps_observation = aps_observation
         # list ap: list uav: ndarray observation
@@ -154,6 +149,38 @@ class Decentralized_Game:
         self.observation = observation
         return self.observation
 
+    @staticmethod
+    def flip_avail(avail):
+        if len(avail) == 6:
+            act = np.where(avail == True)[0]
+            act = act * 2 + 1
+            act = ((6 - act % 6) + 6 * (act // 6) - 1) / 2
+            new_avail = np.zeros(len(avail), dtype=bool)
+            new_avail[act.astype(int)] = True
+            return new_avail
+        act = np.where(avail[0:12] == True)[0]
+        act = (6 - act % 6) + 6 * (act // 6) - 1
+        new_avail = np.zeros(len(avail), dtype=bool)
+        new_avail[act.astype(int)] = True
+        new_avail[-1] = True
+        return new_avail
+
+    @staticmethod
+    def rot_avail(avail):
+        if len(avail) == 6:
+            act = np.where(avail == True)[0]
+            act = act * 2 + 1
+            act = ((-6 + act + 12) % 12 - 1) / 2
+            new_avail = np.zeros(len(avail), dtype=bool)
+            new_avail[act.astype(int)] = True
+            return new_avail
+        act = np.where(avail[0:12] == True)[0]
+        act = (-6 + act + 12) % 12
+        new_avail = np.zeros(len(avail), dtype=bool)
+        new_avail[act.astype(int)] = True
+        new_avail[-1] = True
+        return new_avail
+
     def step(self, accesspoint=None, epsilon=0):
         """
             :parameter accesspoint: the models of access points
@@ -161,7 +188,7 @@ class Decentralized_Game:
             :parameter result_prob: output of network, with estimate weight of tiles for transmission
         """
 
-        self.environment.established()
+        avil_action = self.environment.established()
 
         for index, tensor_obs in enumerate(self.get_observation_tensor()):
             self.state_buffer[index].append(tensor_obs)
@@ -170,22 +197,22 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action = np.random.randint(6, size=self.environment.ap_number)
-            action_re = action * 2 + 1
+            action_re = self.environment.random_action('double', avil_action)
         else:
+            avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
-                action.append(accesspoint[index].act_e_greedy(ap_state[index], self.available_ap[index],
+                action.append(accesspoint[index].act_e_greedy(ap_state[index], avil_action[index],
                                                               epsilon, self.args.action_selection))
                 # Choose an action greedily (with noisy weights)
             action_re = np.array(action) * 2 + 1
 
-        real_action = self.environment.set_action(action_re)
+        self.environment.set_action(action_re)
         reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
         if np.random.rand() < 0.001:
             print(reward, action)
             myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
 
-        return ap_state, real_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action_re, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -193,7 +220,7 @@ class Decentralized_Game:
             :parameter accesspoint: the models of scheduler
             :parameter result_prob: output of network, with estimate weight of tiles for transmission
         """
-        self.environment.established()
+        avil_action = self.environment.established()
 
         for index, tensor_obs in enumerate(self.get_observation_tensor()):
             self.state_buffer[index].append(tensor_obs)
@@ -203,19 +230,19 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action = np.random.randint(6, size=self.environment.ap_number)
-            action_re = action * 2 + 1
+            action_re = self.environment.random_action('double', avil_action)
         else:
+            avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):
-                pipe.send((ap_state[index], self.available_ap[index]))
+                pipe.send((ap_state[index], avil_action[index]))
                 action.append(pipe.recv())
                 # Choose an action greedily (with noisy weights)
             action_re = np.array(action) * 2 + 1
 
-        real_action = self.environment.set_action(action_re)
+        self.environment.set_action(action_re)
         reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
 
-        return ap_state, real_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action_re, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr

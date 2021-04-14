@@ -4,7 +4,7 @@ LENGTH_OF_FIELD = 192
 REWARD_CAL_RANGE = 1  # reward calculation range for each accesspoint (range = RCR*ACCESS_FIELD)
 NUM_OF_ACCESSPOINT = 20
 ACCESSPOINT_SPACE = 13  # the edge of each HEX is 2 unit
-ACCESS_POINTS_FIELD = 4 * ACCESSPOINT_SPACE * 2 + 1  # must be odd
+ACCESS_POINTS_FIELD = np.floor(2 * np.sqrt(3) * ACCESSPOINT_SPACE * 2) + 3  # must be odd
 
 DENSE_OF_USERS = 250
 

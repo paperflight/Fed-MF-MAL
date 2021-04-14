@@ -111,9 +111,6 @@ class Decentralized_Game:
         else:
             raise ValueError("Illegal observation version")
 
-        if (gp.ACCESS_POINTS_FIELD - 1) % (2 * gp.SQUARE_STEP) != 0:
-            raise ValueError("Access point field must be odd and diviable by step size")
-
         pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2 - (gp.ACCESSPOINT_SPACE - 1)) / gp.SQUARE_STEP)
 
         obs_decentral = []
@@ -182,13 +179,13 @@ class Decentralized_Game:
                 # Choose an action greedily (with noisy weights)
             action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action_re)
+        real_action = self.environment.set_action(action_re)
         reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
         if np.random.rand() < 0.001:
             print(reward, action)
             myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
 
-        return ap_state, action_re, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, real_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -215,15 +212,15 @@ class Decentralized_Game:
                 # Choose an action greedily (with noisy weights)
             action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action_re)
+        real_action = self.environment.set_action(action_re)
         reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
 
-        return ap_state, action_re, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, real_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr
         sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 10
+        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
         ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
                               - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)

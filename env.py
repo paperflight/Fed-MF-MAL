@@ -49,6 +49,7 @@ class Connection_Graph:
         return indi
 
     def hand_shake(self, ap_actions):
+        real_action = np.array(ap_actions)
         hex_action_indices_map = [[3], [3, 5], [5], [5, 4], [4], [4, 2], [2], [2, 0], [0], [0, 1], [1], [1, 3], None]
         #     /11-0---1\
         #   10          2
@@ -66,21 +67,23 @@ class Connection_Graph:
         #     2                type6 --- type7 --- type8
         # indices map, for six number in the connection graph
         self.decision = np.zeros(self.connection_graph.shape)
-        for ap, ap_action in enumerate(ap_actions):
+        for ap, ap_action in enumerate(real_action):
             hex_action = hex_action_indices_map[ap_action]
             if hex_action is None:
                 self.decision[ap] = 0
             else:
                 connected_ap = np.where(self.connection_graph[ap] == 1)[0]
                 coop_indi = self.neighbor_indices(ap)[hex_action]
-                if np.all(coop_indi == -1):
-                    self.decision[ap] = 0
+                while np.all(coop_indi == -1):
+                    ap_action = np.random.randint(0, 13)
+                    real_action[ap] = ap_action
+                    coop_indi = self.neighbor_indices(ap)[hex_action_indices_map[ap_action]]
+                    # roll for another action if current one is not applicapable
+                res_indi = coop_indi[coop_indi != -1]
+                if np.all(np.isin(res_indi, connected_ap)):
+                    self.decision[ap][res_indi] = 1
                 else:
-                    res_indi = coop_indi[coop_indi != -1]
-                    if np.all(np.isin(res_indi, connected_ap)):
-                        self.decision[ap][res_indi] = 1
-                    else:
-                        raise ValueError("Impossible selection, check neighbor indices function")
+                    raise ValueError("Impossible selection, check neighbor indices function")
 
         hand_shake_bool = np.logical_and(self.decision, np.transpose(self.decision))
         self.hand_shake_result = self.decision * hand_shake_bool
@@ -103,6 +106,7 @@ class Connection_Graph:
                 self.hand_shake_result[temp[1]][[ap, temp[0]]] = 2
                 # connect triangle connected aps
         self.hand_shake_result = np.floor(self.hand_shake_result / 1.5)
+        return real_action
 
 
 class Channel:
@@ -265,8 +269,9 @@ class Channel:
     def set_action(self, ap_action):
         if gp.DEBUG and len(ap_action) != self.ap_number:
             raise OverflowError("Unmatch action size")
-        self.coop_graph.hand_shake(ap_action)
+        real_action = self.coop_graph.hand_shake(ap_action)
         self.coop_decision = self.coop_graph.hand_shake_result
+        return real_action
 
     def precoder_ap_user(self):
         #  user_group: index of ap, users served by that ap within that ap
@@ -370,7 +375,7 @@ class Channel:
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
-        return ap_distribute_reward
+        return ap_distribute_reward - 0.5
 
     def decentralized_reward_exclude_central(self, sinr):
         sinr_clip = sinr
@@ -408,7 +413,7 @@ class Channel:
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
-        return ap_distribute_reward
+        return ap_distribute_reward - 0.5
 
 
 if __name__ == "__main__":

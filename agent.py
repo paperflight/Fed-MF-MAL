@@ -110,13 +110,13 @@ class Agent:
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_boltzmann(self, state, avail):  # High ε can reduce evaluation scores drastically
         with torch.no_grad():
-            res_policy = (self.online_net(state.unsqueeze(0)) * self.support).sum(2).detach().numpy()
+            res_policy = (self.online_net(state.unsqueeze(0)) * self.support).sum(2).detach()
             return self.boltzmann(res_policy, [avail])
 
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
         res = []
-        res_policy = softmax_sci(res_policy, axis=1)
+        res_policy = softmax_sci(res_policy.numpy(), axis=1)
         for i in range(sizeofres[0]):
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
@@ -181,7 +181,7 @@ class Agent:
                 argmax_indices_ns = dns.argmax(1)
                 # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
             elif self.action_type == 'boltzmann':
-                argmax_indices_ns = self.boltzmann(dns.sum(2), avails.numpy())
+                argmax_indices_ns = self.boltzmann(dns.sum(2))
             elif self.action_type == 'no_limit':
                 argmax_indices_ns = dns.sum(2).argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise

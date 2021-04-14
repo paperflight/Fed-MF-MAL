@@ -4,7 +4,7 @@ import os
 import numpy as np
 import torch
 from torch import optim
-from scipy.special import softmax
+from scipy.special import softmax as softmax_sci
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
@@ -116,7 +116,7 @@ class Agent:
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
         res = []
-        res_policy = softmax(res_policy, axis=1)
+        res_policy = softmax_sci(res_policy, axis=1)
         for i in range(sizeofres[0]):
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
@@ -181,7 +181,7 @@ class Agent:
                 argmax_indices_ns = dns.argmax(1)
                 # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
             elif self.action_type == 'boltzmann':
-                argmax_indices_ns = self.boltzmann(dns.sum(2), avails)
+                argmax_indices_ns = self.boltzmann(dns.sum(2), avails.numpy())
             elif self.action_type == 'no_limit':
                 argmax_indices_ns = dns.sum(2).argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise

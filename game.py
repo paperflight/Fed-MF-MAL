@@ -207,7 +207,7 @@ class Decentralized_Game:
             action_re = np.array(action) * 2 + 1
 
         self.environment.set_action(action_re)
-        reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
+        reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
         if np.random.rand() < 0.001:
             print(reward, action)
             myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
@@ -240,57 +240,9 @@ class Decentralized_Game:
             action_re = np.array(action) * 2 + 1
 
         self.environment.set_action(action_re)
-        reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
+        reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
 
         return ap_state, action_re, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
-
-    def decentralized_reward(self, sinr):
-        sinr_clip = sinr
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
-        ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
-                              - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
-        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_distribute_reward = ap_observe_relation * sinr_clip
-        normalized_factor = np.sum(ap_observe_relation, axis=1)
-        normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
-        # normalization
-        return ap_distribute_reward - 0.5
-
-    def decentralized_reward_exclude_central(self, sinr):
-        sinr_clip = sinr
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
-        ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
-                              - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
-        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2),
-                                         axis=2)
-        ap_observe_relation_cet = np.any(
-            np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
-        ap_distribute_reward = ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
-        normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, ap_observe_relation_cet), axis=1)
-        normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
-        # normalization
-        return ap_distribute_reward
-
-    def decentralized_reward_directional(self, sinr, action):
-        sinr_clip = sinr
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
-        ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
-                              - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
-        ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 0], ap_observe_relation[:, :, 1]) * 180 / np.pi
-        ap_observe_angle = ap_observe_angle - (150 - (np.ones([self.environment.ap_number, self.environment.user_number]).T * action).T * 30)
-        ap_observe_angle = np.logical_and(ap_observe_angle < 0, ap_observe_angle > -120)
-        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_distribute_reward = np.logical_and(ap_observe_angle, ap_observe_relation) * sinr_clip
-        normalized_factor = np.sum(ap_observe_relation, axis=1)
-        normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
-        # normalization
-        return ap_distribute_reward
 
     def close(self):
         del self

@@ -208,6 +208,8 @@ class Channel:
             raise ValueError("User/ap number invalid")
         new_user_position: np.ndarray = np.array([np.random.rand(2) * [self.area_size_l, self.area_size_w]
                                                  for _ in range(self.user_number - self.user_position.shape[0])])
+        # new_user_position: np.ndarray = np.array([np.random.rand(2) * [50, 50]
+        #                                          for _ in range(self.user_number - self.user_position.shape[0])])
         if self.user_position is None or self.user_position.shape[0] == 0:
             self.user_position = new_user_position
         else:
@@ -415,10 +417,11 @@ class Channel:
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
         ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
                                                                                 (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_observe_relation_cet = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2)
-        ap_distribute_reward = gain /(gp.USER_WAITING - self.user_qos[:, 1]) + rest * \
-                               ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / 100 - 1
+        ap_observe_relation_cet = np.any(np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)),
+                                                axis=2), axis=0)
+        ap_distribute_reward = ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * \
+                               (gain / (gp.USER_WAITING - self.user_qos[:, 1]) * gp.USER_QOS)
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / 20
 
         self.user_position = self.user_position[rest]
         self.user_qos = self.user_qos[rest]
@@ -493,14 +496,14 @@ if __name__ == "__main__":
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('random')
+        sinr, action, aa = x.test_sinr('isolate')
         res = x.decentralized_reward_moving(sinr)
         res_avg += res
     res_avg /= 1000
     print(res_avg)
     res_avg1 = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('updown')
+        sinr, action, aa = x.test_sinr('fixed')
         res = x.decentralized_reward_moving(sinr)
         res_avg1 += res
     res_avg1 /= 1000

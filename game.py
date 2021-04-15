@@ -52,12 +52,12 @@ class Decentralized_Game:
         self.args = args
         self.board_length = gp.LENGTH_OF_FIELD
         self.one_side_length = int(math.floor(gp.ACCESS_POINTS_FIELD - 1) / (2 * gp.SQUARE_STEP))
-        self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.LENGTH_OF_FIELD],
+        self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
                                        ["PPP", gp.DENSE_OF_USERS],
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
-                            ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"],
+                            ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, None],
                             "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
 
         self.state_buffer = []
@@ -108,7 +108,7 @@ class Decentralized_Game:
         else:
             raise ValueError("Illegal observation version")
 
-        pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2 - (gp.ACCESSPOINT_SPACE - 1)) / gp.SQUARE_STEP)
+        pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
 
         obs_decentral = []
         for index_obs in range(gp.OBSERVATION_DIMS):

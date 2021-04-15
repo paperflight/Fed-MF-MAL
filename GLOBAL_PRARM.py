@@ -1,6 +1,7 @@
 import numpy as np
 
-LENGTH_OF_FIELD = 192
+LENGTH_OF_FIELD = 182
+WIDTH_OF_FIELD = 164
 REWARD_CAL_RANGE = 1  # reward calculation range for each accesspoint (range = RCR*ACCESS_FIELD)
 NUM_OF_ACCESSPOINT = 20
 ACCESSPOINT_SPACE = 13  # the edge of each HEX is 2 unit

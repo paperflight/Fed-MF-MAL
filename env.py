@@ -129,7 +129,7 @@ class Channel:
         self.large_scale_fading_type, self.small_scale_fading_type, self.non_los, self.large_scale_fading_parameter, \
         self.small_scale_fading_parameter, self.precoding = channel
         # example: ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"]
-        self.area_shape, self.area_size_w, self.area_size_c = area
+        self.area_shape, self.area_size_l, self.area_size_w = area
 
         # association
         self.associate_type = associate_type
@@ -162,8 +162,7 @@ class Channel:
             raise ValueError("Unknown User Distribution Type")
         if self.ap_distri_type == "Hex":
             calculated_ap = (int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1) * \
-                             (int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
-                              (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)
+                             (int(gp.WIDTH_OF_FIELD // (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)
             if calculated_ap != self.ap_number:
                 raise ImportWarning("The actual ap number for Hex is "+str(calculated_ap) + ". Please Check input.")
             self.ap_number = calculated_ap
@@ -181,12 +180,11 @@ class Channel:
         if gp.DEBUG and self.user_number <= 0 or self.ap_number <= 0:
             raise ValueError("User/ap number invalid")
         self.user_position = \
-            np.asarray([np.random.rand(2) * [self.area_size_w, self.area_size_c] for _ in range(self.user_number)])
+            np.asarray([np.random.rand(2) * [self.area_size_l, self.area_size_w] for _ in range(self.user_number)])
         self.ap_position = \
-            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 1 + x % 2)]
+            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 0.1 + x % 2)]
                         for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
-                        for y in range(int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
-                                       (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)]) \
+                        for y in range(int(gp.WIDTH_OF_FIELD // (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)]) \
             * self.ap_distri_space
         self.dist_matrix = ssd.cdist(self.ap_position, self.user_position)
         self.dist_matrix[np.where(self.dist_matrix < 1)] += 1
@@ -430,8 +428,8 @@ class Channel:
 
 
 if __name__ == "__main__":
-    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.LENGTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
-                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
+    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
+                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, None], "Stronger First",
                 13 * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",

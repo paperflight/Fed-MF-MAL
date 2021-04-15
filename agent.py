@@ -181,7 +181,7 @@ class Agent:
                 argmax_indices_ns = dns.argmax(1)
                 # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
             elif self.action_type == 'boltzmann':
-                argmax_indices_ns = self.boltzmann(dns.sum(2))
+                argmax_indices_ns = self.boltzmann(dns.sum(2), avails)
             elif self.action_type == 'no_limit':
                 argmax_indices_ns = dns.sum(2).argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise

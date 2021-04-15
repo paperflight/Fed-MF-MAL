@@ -215,10 +215,9 @@ class Channel:
         else:
             self.user_position = np.concatenate((self.user_position, new_user_position))
         self.ap_position = \
-            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 0.3 + x % 2)]
+            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 0.1 + x % 2)]
                         for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
-                        for y in range(int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
-                                       (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)]) \
+                        for y in range(int(gp.WIDTH_OF_FIELD // (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)]) \
             * self.ap_distri_space
         self.dist_matrix = ssd.cdist(self.ap_position, self.user_position)
         self.dist_matrix[np.where(self.dist_matrix < 1)] += 1

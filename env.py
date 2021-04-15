@@ -413,8 +413,8 @@ class Channel:
         sinr_clip[sinr_clip > gp.USER_QOS] = 1
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
-        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2),
-                                         axis=2)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
+                                                                                (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
         ap_observe_relation_cet = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2)
         ap_distribute_reward = gain /(gp.USER_WAITING - self.user_qos[:, 1]) + rest * \
                                ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
@@ -493,7 +493,7 @@ if __name__ == "__main__":
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('isolate')
+        sinr, action, aa = x.test_sinr('random')
         res = x.decentralized_reward_moving(sinr)
         res_avg += res
     res_avg /= 1000

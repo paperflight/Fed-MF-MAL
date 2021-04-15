@@ -215,7 +215,7 @@ class Channel:
         else:
             self.user_position = np.concatenate((self.user_position, new_user_position))
         self.ap_position = \
-            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + x % 2)]
+            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 0.3 + x % 2)]
                         for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
                         for y in range(int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
                                        (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)]) \
@@ -408,7 +408,7 @@ class Channel:
         self.user_qos[:, 0] -= sinr
         self.user_qos[:, 1] -= 1
         rest = np.all(self.user_qos > 0, axis=1)
-        gain = np.logical_and(self.user_qos[:, 0] < 0, self.user_qos[:, 1] > 0)
+        gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
         dump = np.logical_and(self.user_qos[:, 0] > 0, self.user_qos[:, 1] < 0)
 
         sinr_clip = sinr
@@ -426,7 +426,7 @@ class Channel:
         self.user_position = self.user_position[rest]
         self.user_qos = self.user_qos[rest]
         self.user_number = np.sum(rest)
-        return ap_distribute_reward * 2
+        return ap_distribute_reward * 2 - 0.8
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr
@@ -503,7 +503,7 @@ if __name__ == "__main__":
     print(res_avg)
     res_avg1 = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('fixed')
+        sinr, action, aa = x.test_sinr('updown')
         res = x.decentralized_reward_moving(sinr)
         res_avg1 += res
     res_avg1 /= 1000

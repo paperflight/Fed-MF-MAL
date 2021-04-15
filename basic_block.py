@@ -123,7 +123,7 @@ class DQN(nn.Module):
 
         if 'canonical' in args.architecture and '61obv' in args.architecture and '16ap' in args.architecture:
             self.convs = nn.Sequential(nn.Conv2d(args.history_length * gp.OBSERVATION_DIMS, 16, 8, stride=3, padding=2), nn.LeakyReLU(),
-                                       nn.Conv2d(16, 32, 4, stride=2, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(),
+                                       nn.Conv2d(16, 32, 4, stride=1, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(),
                                        nn.Conv2d(32, 32, 3, stride=1, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(),
                                        nn.Dropout2d(0.2))
             self.conv_output_size = 512  # 41: 2: 1600  # 61: 2: 2368 3: 3200 4: 4288  # 4 uav: 4992

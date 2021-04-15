@@ -103,10 +103,12 @@ class Connection_Graph:
         # cut hand shake failures
         self.hand_shake_result = self.hand_shake_result + np.transpose(self.hand_shake_result)
 
+        result_action = np.ones(len(ap_actions), dtype=int) * 12
         for ap, ap_action in enumerate(ap_actions):
             temp = np.where(self.hand_shake_result[ap] == 1)[0]
             if len(temp) == 2 and self.hand_shake_result[temp[0]][temp[1]] == 1:
                 self.hand_shake_result[ap][temp] = 2
+                result_action[ap] = ap_actions[ap]
                 # confirm the circles
                 continue
             temp = np.where(self.hand_shake_result[ap] == 1.5)[0]
@@ -115,7 +117,23 @@ class Connection_Graph:
                 self.hand_shake_result[temp[0]][[ap, temp[1]]] = 2
                 self.hand_shake_result[temp[1]][[ap, temp[0]]] = 2
                 # connect triangle connected aps
+            temp = np.where(self.hand_shake_result[ap] > 1)[0]
+            if len(temp) == 0:
+                result_action[ap] = 12
+                continue
+            neighbor_ind = self.neighbor_indices(ap)
+            if len(temp) == 2:
+                temp0 = np.where(neighbor_ind == temp[0])[0]
+                temp1 = np.where(neighbor_ind == temp[1])[0]
+                for act_num, act in enumerate(hex_action_indices_map):
+                    if temp0[0] in act and temp1[0] in act:
+                        result_action[ap] = act_num
+                        break
+            else:
+                temp0 = np.where(neighbor_ind == temp[0])[0]
+                result_action[ap] = hex_action_indices_map.index(temp0.tolist())
         self.hand_shake_result = np.floor(self.hand_shake_result / 1.5)
+        return result_action
 
 
 class Channel:
@@ -131,14 +149,14 @@ class Channel:
         self.large_scale_fading_type, self.small_scale_fading_type, self.non_los, self.large_scale_fading_parameter, \
         self.small_scale_fading_parameter, self.precoding = channel
         # example: ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"]
-        self.area_shape, self.area_size_w, self.area_size_c = area
+        self.area_shape, self.area_size_l, self.area_size_w = area
 
         # association
         self.associate_type = associate_type
         self.association_result = np.zeros([self.ap_number, self.user_number])
 
         # location matrixs
-        self.ap_position = np.zeros([2, self.ap_number])
+        self.ap_position = np.zeros([self.ap_number, 2])
         self.user_position = np.array([])
         self.dist_matrix = np.zeros([self.ap_number, self.user_number])
 
@@ -164,8 +182,7 @@ class Channel:
             raise ValueError("Unknown User Distribution Type")
         if self.ap_distri_type == "Hex":
             calculated_ap = (int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1) * \
-                             (int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
-                              (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)
+                             (int(gp.WIDTH_OF_FIELD // (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)
             if calculated_ap != self.ap_number:
                 raise ImportWarning("The actual ap number for Hex is "+str(calculated_ap) + ". Please Check input.")
             self.ap_number = calculated_ap
@@ -189,14 +206,14 @@ class Channel:
     def location_init(self):
         if gp.DEBUG and self.user_number <= 0 or self.ap_number <= 0:
             raise ValueError("User/ap number invalid")
-        new_user_position: np.ndarray = np.array([np.random.rand(2) * [self.area_size_w, self.area_size_c]
+        new_user_position: np.ndarray = np.array([np.random.rand(2) * [self.area_size_l, self.area_size_w]
                                                  for _ in range(self.user_number - self.user_position.shape[0])])
         if self.user_position is None or self.user_position.shape[0] == 0:
             self.user_position = new_user_position
         else:
             self.user_position = np.concatenate((self.user_position, new_user_position))
         self.ap_position = \
-            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 1 + x % 2)]
+            np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + x % 2)]
                         for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
                         for y in range(int((gp.LENGTH_OF_FIELD - np.sqrt(3) * gp.ACCESSPOINT_SPACE) //
                                        (2 * np.sqrt(3) * gp.ACCESSPOINT_SPACE)) + 1)]) \
@@ -287,15 +304,16 @@ class Channel:
             while not ap_action[action[ap]]:
                 new_action = np.random.randint(0, 13)
                 action[ap] = new_action
-        self.coop_graph.hand_shake(action)
+        actual_action = self.coop_graph.hand_shake(action)
         self.coop_decision = self.coop_graph.hand_shake_result
-        return action
+        return action, actual_action
 
     def set_action(self, ap_action):
         if gp.DEBUG and len(ap_action) != self.ap_number:
             raise OverflowError("Unmatch action size")
-        self.coop_graph.hand_shake(ap_action)
+        actual_action = self.coop_graph.hand_shake(ap_action)
         self.coop_decision = self.coop_graph.hand_shake_result
+        return actual_action
 
     def precoder_ap_user(self):
         #  user_group: index of ap, users served by that ap within that ap
@@ -373,7 +391,7 @@ class Channel:
         self.calculate_small_scale_fading()
         self.calculate_association()
         avail = self.coop_graph.calculate_action_mask()
-        action = self.random_action(action_type, avail)
+        action, actual_action = self.random_action(action_type, avail)
         self.map_association_with_coop_decision()
         sinr = self.sinr_ap_user()
         if gp.LOG_LEVEL >= 2:
@@ -381,7 +399,7 @@ class Channel:
             myplt.table_print_color(np.stack((sinr,
                                               np.sqrt(np.sum(np.power(self.user_position - associ_position, 2),
                                                              axis=1))), axis=1), "SINR_DISTANCE", gp.UE_COLOR)
-        return sinr, action
+        return sinr, action, actual_action
 
     def decentralized_reward_moving(self, sinr):
         sinr = np.log2(sinr + 1)
@@ -397,15 +415,15 @@ class Channel:
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
         ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2),
                                          axis=2)
-        ap_observe_relation_cet = np.any(
-            np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
-        ap_distribute_reward = (gain + rest) * ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / 100
+        ap_observe_relation_cet = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2)
+        ap_distribute_reward = gain /(gp.USER_WAITING - self.user_qos[:, 1]) + rest * \
+                               ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / 100 - 1
 
         self.user_position = self.user_position[rest]
         self.user_qos = self.user_qos[rest]
         self.user_number = np.sum(rest)
-        return ap_distribute_reward - 0.5
+        return ap_distribute_reward * 2
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr
@@ -467,22 +485,22 @@ class Channel:
 
 
 if __name__ == "__main__":
-    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.LENGTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
-                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
+    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
+                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, None], "Stronger First",
                 13 * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     for _ in range(1000):
-        sinr, action = x.test_sinr('updown')
+        sinr, action, aa = x.test_sinr('isolate')
         res = x.decentralized_reward_moving(sinr)
         res_avg += res
     res_avg /= 1000
     print(res_avg)
     res_avg1 = np.zeros(20)
     for _ in range(1000):
-        sinr, action = x.test_sinr('ones')
+        sinr, action, aa = x.test_sinr('updown')
         res = x.decentralized_reward_moving(sinr)
         res_avg1 += res
     res_avg1 /= 1000

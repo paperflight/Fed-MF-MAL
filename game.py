@@ -50,9 +50,10 @@ import typing
 class Decentralized_Game:
     def __init__(self, args):
         self.args = args
-        self.board_length = gp.LENGTH_OF_FIELD
+        self.board_length_l = gp.LENGTH_OF_FIELD
+        self.board_length_w = gp.WIDTH_OF_FIELD
         self.one_side_length = int(math.floor(gp.ACCESS_POINTS_FIELD - 1) / (2 * gp.SQUARE_STEP))
-        self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.LENGTH_OF_FIELD],
+        self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
                                        ["PPP", gp.DENSE_OF_USERS],
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
@@ -83,7 +84,7 @@ class Decentralized_Game:
         return 13
 
     def plot_grid_map(self, position_list):
-        grid_map = np.zeros([int(self.board_length / gp.SQUARE_STEP), int(self.board_length / gp.SQUARE_STEP)],
+        grid_map = np.zeros([int(self.board_length_l / gp.SQUARE_STEP), int(self.board_length_w / gp.SQUARE_STEP)],
                             dtype=bool)
         clusters_locations_norms = np.floor(position_list / gp.SQUARE_STEP).astype(int)
         for locations in clusters_locations_norms:
@@ -108,7 +109,7 @@ class Decentralized_Game:
         else:
             raise ValueError("Illegal observation version")
 
-        pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2 - (gp.ACCESSPOINT_SPACE - 1)) / gp.SQUARE_STEP)
+        pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
 
         obs_decentral = []
         for index_obs in range(gp.OBSERVATION_DIMS):
@@ -136,10 +137,10 @@ class Decentralized_Game:
                 ue position in largest cluster, total position with cluster number mark
         """
 
-        observation = [np.zeros([np.floor(self.board_length / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length / gp.SQUARE_STEP).astype(int)], dtype=bool),
-                       np.zeros([np.floor(self.board_length / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length / gp.SQUARE_STEP).astype(int)], dtype=bool)]
+        observation = [np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool),
+                       np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool)]
 
         ap_pos = np.floor(self.environment.ap_position / gp.SQUARE_STEP).astype(int)
         observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
@@ -197,7 +198,7 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action = self.environment.random_action('random', avil_action)
+            action, _ = self.environment.random_action('random', avil_action)
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
@@ -206,13 +207,13 @@ class Decentralized_Game:
                 # Choose an action greedily (with noisy weights)
             # action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action)
+        actual_action = self.environment.set_action(action)
         reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
         if np.random.rand() < 0.005:
             print(reward, action)
             myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
 
-        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -230,7 +231,7 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action = self.environment.random_action('random', avil_action)
+            action, _ = self.environment.random_action('random', avil_action)
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):
@@ -239,10 +240,10 @@ class Decentralized_Game:
                 # Choose an action greedily (with noisy weights)
             # action = np.array(action) * 2 + 1
 
-        self.environment.set_action(action)
+        actual_action = self.environment.set_action(action)
         reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
 
-        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def close(self):
         del self

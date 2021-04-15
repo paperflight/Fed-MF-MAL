@@ -1,16 +1,17 @@
 import numpy as np
 
-LENGTH_OF_FIELD = 192
+LENGTH_OF_FIELD = 182
+WIDTH_OF_FIELD = 160
 REWARD_CAL_RANGE = 1  # reward calculation range for each accesspoint (range = RCR*ACCESS_FIELD)
 NUM_OF_ACCESSPOINT = 20
 ACCESSPOINT_SPACE = 13  # the edge of each HEX is 2 unit
-ACCESS_POINTS_FIELD = np.floor(2 * np.sqrt(3) * ACCESSPOINT_SPACE * 2) + 3  # must be odd
+ACCESS_POINTS_FIELD = np.floor(2 * ACCESSPOINT_SPACE * 2) + 5  # must be odd
 
 DENSE_OF_USERS = 200
 
 MAX_USERS_MOBILITY = 1
-USER_QOS = 3
-USER_WAITING = 3
+USER_QOS = 4
+USER_WAITING = 2
 
 AP_TRANSMISSION_CENTER_FREUENCY = 5e9
 

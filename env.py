@@ -399,13 +399,13 @@ class Channel:
                                          axis=2)
         ap_observe_relation_cet = np.any(
             np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
-        ap_distribute_reward = gain * ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
+        ap_distribute_reward = (gain + rest) * ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / 100
 
         self.user_position = self.user_position[rest]
         self.user_qos = self.user_qos[rest]
         self.user_number = np.sum(rest)
-        return ap_distribute_reward
+        return ap_distribute_reward - 0.5
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr

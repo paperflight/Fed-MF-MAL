@@ -49,8 +49,8 @@ parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help
 parser.add_argument('--noisy-std', type=float, default=0.5, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
 parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=0, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=1, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--V-min', type=float, default=-0.2, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=4, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')

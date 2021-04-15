@@ -1,4 +1,5 @@
 import numpy as np
+from numpy import ndarray
 from scipy.stats import nakagami, rayleigh
 import scipy.spatial.distance as ssd
 import typing
@@ -124,6 +125,7 @@ class Channel:
         self.ap_distri_type, self.ap_number, self.ap_distri_space = ap_distribution
         # hex edge is 2 unit, ap-space present 1 unit
         self.user_number = 0
+        self.user_qos = np.array([])
         self.user_trans_power, self.user_trans_gain, self.user_central_freq = user_parameters
         self.ap_trans_power, self.ap_trans_gain, self.ap_central_freq = ap_parameters
         self.large_scale_fading_type, self.small_scale_fading_type, self.non_los, self.large_scale_fading_parameter, \
@@ -137,7 +139,7 @@ class Channel:
 
         # location matrixs
         self.ap_position = np.zeros([2, self.ap_number])
-        self.user_position = np.zeros([2, self.ap_number])
+        self.user_position = np.array([])
         self.dist_matrix = np.zeros([self.ap_number, self.user_number])
 
         # fading matrixs
@@ -157,7 +159,7 @@ class Channel:
 
     def number_init(self):
         if self.user_distri_type == "PPP":
-            self.user_number = np.random.poisson(self.user_distri_para) + 1
+            self.user_number += np.random.poisson(self.user_distri_para)
         else:
             raise ValueError("Unknown User Distribution Type")
         if self.ap_distri_type == "Hex":
@@ -177,11 +179,22 @@ class Channel:
         self.line_of_sight = np.array([])
         self.channel = np.zeros(self.dist_matrix.shape, dtype=complex)
 
+        new_user_qos = np.ones([self.user_number - self.user_qos.shape[0], 2]) * gp.USER_QOS
+        new_user_qos[:, 1] = gp.USER_WAITING
+        if self.user_qos is None or self.user_qos.shape[0] == 0:
+            self.user_qos = new_user_qos
+        else:
+            self.user_qos = np.concatenate((self.user_qos, new_user_qos))
+
     def location_init(self):
         if gp.DEBUG and self.user_number <= 0 or self.ap_number <= 0:
             raise ValueError("User/ap number invalid")
-        self.user_position = \
-            np.asarray([np.random.rand(2) * [self.area_size_w, self.area_size_c] for _ in range(self.user_number)])
+        new_user_position: np.ndarray = np.array([np.random.rand(2) * [self.area_size_w, self.area_size_c]
+                                                 for _ in range(self.user_number - self.user_position.shape[0])])
+        if self.user_position is None or self.user_position.shape[0] == 0:
+            self.user_position = new_user_position
+        else:
+            self.user_position = np.concatenate((self.user_position, new_user_position))
         self.ap_position = \
             np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 1 + x % 2)]
                         for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
@@ -370,6 +383,30 @@ class Channel:
                                                              axis=1))), axis=1), "SINR_DISTANCE", gp.UE_COLOR)
         return sinr, action
 
+    def decentralized_reward_moving(self, sinr):
+        sinr = np.log2(sinr + 1)
+        self.user_qos[:, 0] -= sinr
+        self.user_qos[:, 1] -= 1
+        rest = np.all(self.user_qos > 0, axis=1)
+        gain = np.logical_and(self.user_qos[:, 0] < 0, self.user_qos[:, 1] > 0)
+        dump = np.logical_and(self.user_qos[:, 0] > 0, self.user_qos[:, 1] < 0)
+
+        sinr_clip = sinr
+        sinr_clip[sinr_clip > gp.USER_QOS] = 1
+        ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
+                              - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2),
+                                         axis=2)
+        ap_observe_relation_cet = np.any(
+            np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
+        ap_distribute_reward = gain * ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / 100
+
+        self.user_position = self.user_position[rest]
+        self.user_qos = self.user_qos[rest]
+        self.user_number = np.sum(rest)
+        return ap_distribute_reward
+
     def decentralized_reward(self, sinr):
         sinr_clip = sinr
         # sinr_clip[sinr_clip > 100] = 0
@@ -439,14 +476,14 @@ if __name__ == "__main__":
     res_avg = np.zeros(20)
     for _ in range(1000):
         sinr, action = x.test_sinr('updown')
-        res = x.decentralized_reward_exclude_central(sinr)
+        res = x.decentralized_reward_moving(sinr)
         res_avg += res
     res_avg /= 1000
     print(res_avg)
     res_avg1 = np.zeros(20)
     for _ in range(1000):
         sinr, action = x.test_sinr('ones')
-        res = x.decentralized_reward_exclude_central(sinr)
+        res = x.decentralized_reward_moving(sinr)
         res_avg1 += res
     res_avg1 /= 1000
     print(res_avg1)

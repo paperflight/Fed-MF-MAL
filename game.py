@@ -104,8 +104,10 @@ class Decentralized_Game:
     def get_observation(self):
         if gp.OBSERVATION_VERSION == 0:
             obs = self._get_observation_v0()
-        # elif gp.OBSERVATION_VERSION == 2:
-        #     obs = self._get_observation_v2()
+        elif gp.OBSERVATION_VERSION == 1:
+            obs = self._get_observation_v1()
+            # elif gp.OBSERVATION_VERSION == 2:
+            #     obs = self._get_observation_v2()
         else:
             raise ValueError("Illegal observation version")
 
@@ -146,6 +148,29 @@ class Decentralized_Game:
         observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
         user_pos = np.floor(self.environment.user_position / gp.SQUARE_STEP).astype(int)
         observation[1][user_pos[:, 0], user_pos[:, 1]] = True
+
+        self.observation = observation
+        return self.observation
+
+    def _get_observation_v1(self):
+        """
+        ATTENTION: ASSIGN NEW POPULARITY BEFORE RUNNING THIS FUNTION!!!!!!!!!!
+
+        :return Observation which is a x*x*3 matrix with position of uav, position of aps,
+                ue position in largest cluster, total position with cluster number mark
+        """
+
+        observation = [np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool),
+                       np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)])]
+
+        ap_pos = np.floor(self.environment.ap_position / gp.SQUARE_STEP).astype(int)
+        observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
+        user_pos = np.floor(self.environment.user_position / gp.SQUARE_STEP).astype(int)
+        for user_id, u_pos in enumerate(user_pos):
+            observation[1][u_pos[0], u_pos[1]] += self.environment.user_qos[user_id, 0]
+        observation[1] /= (gp.USER_QOS * 2)
 
         self.observation = observation
         return self.observation
@@ -213,7 +238,7 @@ class Decentralized_Game:
             print(reward, action)
             myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
 
-        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -243,7 +268,7 @@ class Decentralized_Game:
         actual_action = self.environment.set_action(action)
         reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
 
-        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def close(self):
         del self

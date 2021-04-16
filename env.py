@@ -298,7 +298,7 @@ class Channel:
         elif action_type == 'ones':
             action = np.ones(self.ap_number, dtype=int) * 9
         elif action_type == 'fixed':
-            action = np.array([1, 5, 3, 1, 3, 11, 7, 9, 1, 5, 3, 1, 3, 11, 7, 9, 1, 5, 3, 1])
+            action = np.array([1, 4, 5, 4, 12, 3, 8, 6, 12, 9, 5, 5, 3, 11, 9, 8, 12, 9, 10, 9])
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
@@ -420,18 +420,22 @@ class Channel:
                                                 axis=2), axis=0)
         ap_distribute_reward = ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * \
                                (gain / (gp.USER_WAITING - self.user_qos[:, 1]) * gp.USER_QOS)
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / 20
+        normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, np.absolute(ap_observe_relation_cet - 1)),
+                                   axis=1)
+        normalized_factor[normalized_factor == 0] = 1
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
 
         self.user_position = self.user_position[rest]
         self.user_qos = self.user_qos[rest]
         self.user_number = np.sum(rest)
-        return ap_distribute_reward * 2 - 0.8
+        return ap_distribute_reward
 
     def decentralized_reward(self, sinr):
         sinr_clip = sinr
-        # sinr_clip[sinr_clip > 100] = 0
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        sinr_clip /= gp.USER_QOS
+        # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
+
         # sinr_x = self.sinr_ap_user_noncoop()
         # sinr_x[np.where(sinr_clip == 0)] = 0
         # # sinr_x[sinr_x > 8] = 8
@@ -445,28 +449,42 @@ class Channel:
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
+
+        if gp.USER_WAITING != 1:
+            raise ValueError("Set user watting to 1 to use these functions")
+        self.user_position = np.array([])
+        self.user_qos = np.array([])
+        self.user_number = 0
         return ap_distribute_reward - 0.5
 
     def decentralized_reward_exclude_central(self, sinr):
         sinr_clip = sinr
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        sinr_clip /= gp.USER_QOS
+        # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
-        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
+                                                                                (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
         ap_observe_relation_cet = np.any(np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
         ap_distribute_reward = ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
-        normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, ap_observe_relation_cet), axis=1)
+        normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, np.absolute(ap_observe_relation_cet - 1)), axis=1)
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
+
+        if gp.USER_WAITING != 1:
+            raise ValueError("Set user watting to 1 to use these functions")
+        self.user_position = np.array([])
+        self.user_qos = np.array([])
+        self.user_number = 0
         return ap_distribute_reward
 
     def decentralized_reward_directional(self, sinr, action):
         sinr_clip = sinr
-        # sinr_clip[sinr_clip > 100] = 0
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        sinr_clip /= gp.USER_QOS
+        # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
         # sinr_x = self.sinr_ap_user_noncoop()
         # sinr_x[np.where(sinr_clip == 0)] = 0
         # # sinr_x[sinr_x > 8] = 8
@@ -479,10 +497,16 @@ class Channel:
         ap_observe_angle = np.logical_and(ap_observe_angle < 0, ap_observe_angle > -120)
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
         ap_distribute_reward = np.logical_and(ap_observe_angle, ap_observe_relation) * sinr_clip
-        normalized_factor = np.sum(ap_observe_relation, axis=1)
+        normalized_factor = np.sum(np.logical_and(ap_observe_angle, ap_observe_relation), axis=1)
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
+
+        if gp.USER_WAITING != 1:
+            raise ValueError("Set user watting to 1 to use these functions")
+        self.user_position = np.array([])
+        self.user_qos = np.array([])
+        self.user_number = 0
         return ap_distribute_reward - 0.5
 
 
@@ -497,6 +521,8 @@ if __name__ == "__main__":
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('isolate')
         res = x.decentralized_reward_moving(sinr)
+        # x.random_action('updown', x.coop_graph.calculate_action_mask())
+        # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
         res_avg += res
     res_avg /= 1000
     print(res_avg)

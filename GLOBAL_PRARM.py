@@ -45,7 +45,7 @@ USER_CLUSTER_INDICATOR_STEP = 2  # scale the length indicator to reduce the stat
 OBSERVATION_DIMS = 2  # each cluster has three observations: ap position, user position
 REWARD_STAGE = [10, 15, 20]  # reward stage, correspoinding to -1, 0, 1, 1.5
 # TODO: when selecting observation 4 and 5, change the observation dims too
-OBSERVATION_VERSION = 0  # 1: observation v1, 2 observation v2
+OBSERVATION_VERSION = 1  # 1: observation v1, 2 observation v2
 # for details look into game.get_observation_vx() function
 
 

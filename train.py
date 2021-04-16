@@ -67,7 +67,7 @@ parser.add_argument('--priority-exponent', type=float, default=0.5, metavar='ω'
                     help='Prioritised experience replay exponent (originally denoted α)')
 parser.add_argument('--priority-weight', type=float, default=0.4, metavar='β',
                     help='Initial prioritised experience replay importance sampling weight')
-parser.add_argument('--multi-step', type=int, default=3, metavar='n',
+parser.add_argument('--multi-step', type=int, default=2, metavar='n',
                     help='Number of steps for multi-step return')
 parser.add_argument('--discount', type=float, default=0.9, metavar='γ', help='Discount factor')
 parser.add_argument('--target-update', type=int, default=int(8000), metavar='τ',
@@ -86,7 +86,7 @@ parser.add_argument('--data-reinforce', action='store_true', help='DataReinforce
 # TODO: Change this after debug
 parser.add_argument('--evaluation-interval', type=int, default=2000, metavar='STEPS',
                     help='Number of training steps between evaluations')
-parser.add_argument('--evaluation-episodes', type=int, default=200, metavar='N',
+parser.add_argument('--evaluation-episodes', type=int, default=400, metavar='N',
                     help='Number of evaluation episodes to average over')
 # TODO: Note that DeepMind's evaluation method is running the latest agent for 500K frames ever every 1M steps
 # TODO: Change this after debug

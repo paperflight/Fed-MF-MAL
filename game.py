@@ -50,7 +50,8 @@ import typing
 class Decentralized_Game:
     def __init__(self, args):
         self.args = args
-        self.board_length = gp.LENGTH_OF_FIELD
+        self.board_length_l = gp.LENGTH_OF_FIELD
+        self.board_length_w = gp.WIDTH_OF_FIELD
         self.one_side_length = int(math.floor(gp.ACCESS_POINTS_FIELD - 1) / (2 * gp.SQUARE_STEP))
         self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
                                        ["PPP", gp.DENSE_OF_USERS],
@@ -80,10 +81,10 @@ class Decentralized_Game:
 
     @staticmethod
     def get_action_size():
-        return 6
+        return 13
 
     def plot_grid_map(self, position_list):
-        grid_map = np.zeros([int(self.board_length / gp.SQUARE_STEP), int(self.board_length / gp.SQUARE_STEP)],
+        grid_map = np.zeros([int(self.board_length_l / gp.SQUARE_STEP), int(self.board_length_w / gp.SQUARE_STEP)],
                             dtype=bool)
         clusters_locations_norms = np.floor(position_list / gp.SQUARE_STEP).astype(int)
         for locations in clusters_locations_norms:
@@ -103,8 +104,10 @@ class Decentralized_Game:
     def get_observation(self):
         if gp.OBSERVATION_VERSION == 0:
             obs = self._get_observation_v0()
-        # elif gp.OBSERVATION_VERSION == 2:
-        #     obs = self._get_observation_v2()
+        elif gp.OBSERVATION_VERSION == 1:
+            obs = self._get_observation_v1()
+            # elif gp.OBSERVATION_VERSION == 2:
+            #     obs = self._get_observation_v2()
         else:
             raise ValueError("Illegal observation version")
 
@@ -136,15 +139,38 @@ class Decentralized_Game:
                 ue position in largest cluster, total position with cluster number mark
         """
 
-        observation = [np.zeros([np.floor(self.board_length / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length / gp.SQUARE_STEP).astype(int)], dtype=bool),
-                       np.zeros([np.floor(self.board_length / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length / gp.SQUARE_STEP).astype(int)], dtype=bool)]
+        observation = [np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool),
+                       np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool)]
 
         ap_pos = np.floor(self.environment.ap_position / gp.SQUARE_STEP).astype(int)
         observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
         user_pos = np.floor(self.environment.user_position / gp.SQUARE_STEP).astype(int)
         observation[1][user_pos[:, 0], user_pos[:, 1]] = True
+
+        self.observation = observation
+        return self.observation
+
+    def _get_observation_v1(self):
+        """
+        ATTENTION: ASSIGN NEW POPULARITY BEFORE RUNNING THIS FUNTION!!!!!!!!!!
+
+        :return Observation which is a x*x*3 matrix with position of uav, position of aps,
+                ue position in largest cluster, total position with cluster number mark
+        """
+
+        observation = [np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool),
+                       np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)])]
+
+        ap_pos = np.floor(self.environment.ap_position / gp.SQUARE_STEP).astype(int)
+        observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
+        user_pos = np.floor(self.environment.user_position / gp.SQUARE_STEP).astype(int)
+        for user_id, u_pos in enumerate(user_pos):
+            observation[1][u_pos[0], u_pos[1]] += self.environment.user_qos[user_id, 0]
+        observation[1] /= (gp.USER_QOS * 2)
 
         self.observation = observation
         return self.observation
@@ -159,7 +185,7 @@ class Decentralized_Game:
             new_avail[act.astype(int)] = True
             return new_avail
         act = np.where(avail[0:12] == True)[0]
-        act = (6 - act % 6) + 6 * (act // 6) - 1
+        act = (6 - act % 6) + 6 * (act // 6)
         new_avail = np.zeros(len(avail), dtype=bool)
         new_avail[act.astype(int)] = True
         new_avail[-1] = True
@@ -197,22 +223,22 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action_re = self.environment.random_action('double', avil_action)
+            action, _ = self.environment.random_action('random', avil_action)
         else:
-            avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
+            # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
                 action.append(accesspoint[index].act_e_greedy(ap_state[index], avil_action[index],
                                                               epsilon, self.args.action_selection))
                 # Choose an action greedily (with noisy weights)
-            action_re = np.array(action) * 2 + 1
+            # action_re = np.array(action) * 2 + 1
 
-        self.environment.set_action(action_re)
-        reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
-        if np.random.rand() < 0.001:
+        actual_action = self.environment.set_action(action)
+        reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
+        if np.random.rand() < 0.005:
             print(reward, action)
             myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
 
-        return ap_state, action_re, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -230,67 +256,19 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action_re = self.environment.random_action('double', avil_action)
+            action, _ = self.environment.random_action('random', avil_action)
         else:
-            avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
+            # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):
                 pipe.send((ap_state[index], avil_action[index]))
                 action.append(pipe.recv())
                 # Choose an action greedily (with noisy weights)
-            action_re = np.array(action) * 2 + 1
+            # action = np.array(action) * 2 + 1
 
-        self.environment.set_action(action_re)
-        reward = self.decentralized_reward_exclude_central(self.environment.sinr_calculation())
+        actual_action = self.environment.set_action(action)
+        reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
 
-        return ap_state, action_re, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
-
-    def decentralized_reward(self, sinr):
-        sinr_clip = sinr
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
-        ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
-                              - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
-        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_distribute_reward = ap_observe_relation * sinr_clip
-        normalized_factor = np.sum(ap_observe_relation, axis=1)
-        normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
-        # normalization
-        return ap_distribute_reward - 0.5
-
-    def decentralized_reward_exclude_central(self, sinr):
-        sinr_clip = sinr
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
-        ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
-                              - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
-        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2),
-                                         axis=2)
-        ap_observe_relation_cet = np.any(
-            np.all(np.absolute(ap_observe_relation) < int((gp.ACCESSPOINT_SPACE - 1)), axis=2), axis=0)
-        ap_distribute_reward = ap_observe_relation_edg * np.absolute(ap_observe_relation_cet - 1) * sinr_clip
-        normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, ap_observe_relation_cet), axis=1)
-        normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
-        # normalization
-        return ap_distribute_reward
-
-    def decentralized_reward_directional(self, sinr, action):
-        sinr_clip = sinr
-        sinr_clip[sinr_clip > 8] = 8
-        sinr_clip = (np.log10(sinr_clip / 8 + 1) * 2 - 0.35) * 5
-        ap_observe_relation = np.stack([self.environment.user_position] * self.environment.ap_position.shape[0], axis=0) \
-                              - np.stack([self.environment.ap_position] * self.environment.user_position.shape[0], axis=1)
-        ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 0], ap_observe_relation[:, :, 1]) * 180 / np.pi
-        ap_observe_angle = ap_observe_angle - (150 - (np.ones([self.environment.ap_number, self.environment.user_number]).T * action).T * 30)
-        ap_observe_angle = np.logical_and(ap_observe_angle < 0, ap_observe_angle > -120)
-        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_distribute_reward = np.logical_and(ap_observe_angle, ap_observe_relation) * sinr_clip
-        normalized_factor = np.sum(ap_observe_relation, axis=1)
-        normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
-        # normalization
-        return ap_distribute_reward
+        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def close(self):
         del self

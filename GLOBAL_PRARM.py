@@ -1,15 +1,17 @@
 import numpy as np
 
 LENGTH_OF_FIELD = 182
-WIDTH_OF_FIELD = 164
-REWARD_CAL_RANGE = 1  # reward calculation range for each accesspoint (range = RCR*ACCESS_FIELD)
+WIDTH_OF_FIELD = 162
+REWARD_CAL_RANGE = 0.6  # reward calculation range for each accesspoint (range = RCR*ACCESS_FIELD)
 NUM_OF_ACCESSPOINT = 20
 ACCESSPOINT_SPACE = 13  # the edge of each HEX is 2 unit
 ACCESS_POINTS_FIELD = np.floor(2 * np.sqrt(3) * ACCESSPOINT_SPACE * 2) + 3  # must be odd
 
-DENSE_OF_USERS = 250
+DENSE_OF_USERS = 200
 
 MAX_USERS_MOBILITY = 1
+USER_QOS = 5
+USER_WAITING = 2
 
 AP_TRANSMISSION_CENTER_FREUENCY = 5e9
 
@@ -18,9 +20,9 @@ SPEED_OF_LIGHT = 3e8
 DRONE_HEIGHT = 40
 EXCESSIVE_NLOS_ATTENUATION = pow(10, 20 / 10)
 
-ACCESS_POINT_TRANSMISSION_EIRP = pow(10, 46 / 10)  # 46 dBm
+ACCESS_POINT_TRANSMISSION_EIRP = 46  # 46 dBm
 ACCESS_POINT_TRANSMISSION_BANDWIDTH = 50e6  # Hz
-UAV_TRANSMISSION_EIRP = pow(10, 46 / 10)  # 46 dBm
+UAV_TRANSMISSION_EIRP = 46  # 46 dBm
 UAV_TRANSMISSION_BANDWIDTH = 50e6  # Hz
 NOISE_THETA = pow(10, -91 / 10)  # -91 dBm
 AP_UE_ALPHA = -4
@@ -43,7 +45,7 @@ USER_CLUSTER_INDICATOR_STEP = 2  # scale the length indicator to reduce the stat
 OBSERVATION_DIMS = 2  # each cluster has three observations: ap position, user position
 REWARD_STAGE = [10, 15, 20]  # reward stage, correspoinding to -1, 0, 1, 1.5
 # TODO: when selecting observation 4 and 5, change the observation dims too
-OBSERVATION_VERSION = 0  # 1: observation v1, 2 observation v2
+OBSERVATION_VERSION = 1  # 1: observation v1, 2 observation v2
 # for details look into game.get_observation_vx() function
 
 

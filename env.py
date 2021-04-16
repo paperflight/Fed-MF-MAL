@@ -455,7 +455,7 @@ class Channel:
         self.user_position = np.array([])
         self.user_qos = np.array([])
         self.user_number = 0
-        return ap_distribute_reward - 0.5
+        return ap_distribute_reward
 
     def decentralized_reward_exclude_central(self, sinr):
         sinr_clip = sinr
@@ -507,7 +507,7 @@ class Channel:
         self.user_position = np.array([])
         self.user_qos = np.array([])
         self.user_number = 0
-        return ap_distribute_reward - 0.5
+        return ap_distribute_reward
 
 
 if __name__ == "__main__":

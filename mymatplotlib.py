@@ -145,9 +145,12 @@ def table_print_color(table: np.ndarray, title: str, color='red'):
                                    headers=['ID'] + [str(k) for k in indi_c[0]], tablefmt="grid"), color))
 
 
-def plot_result_hexagon(ap_position, action, coop_res):
+def plot_result_hexagon(ap_position, action, coop_res, user_position, user_color=None):
     color_map = np.array([[None] * 4] * len(action))
     cmap = plt.get_cmap('tab20')
+    if user_color is not None:
+        user_color[user_color > gp.USER_QOS] = gp.USER_QOS
+        user_color /= gp.USER_QOS
 
     color_ind = 0
     for ind in range(len(action)):
@@ -174,7 +177,13 @@ def plot_result_hexagon(ap_position, action, coop_res):
         ax.text(x, y + 0.2, str(l), ha='center', va='center', size=20)
 
     # Also add scatter points in hexagon centres
-    ax.scatter(ap_position[:, 0], ap_position[:, 1], c=[(col[0], col[1], col[2], col[3]) for col in color_map], alpha=0.5)
+    ax.scatter(ap_position[:, 0], ap_position[:, 1], c=[(col[0], col[1], col[2], col[3]) for col in color_map],
+               alpha=0.5)
+    if user_color is None:
+        ax.scatter(user_position[:, 0], user_position[:, 1], c='black', alpha=0.3)
+    else:
+        for user in range(user_position.shape[0]):
+            ax.scatter(user_position[user, 0], user_position[user, 1], c='black', alpha=user_color[user])
 
     plt.show()
     plt.close()

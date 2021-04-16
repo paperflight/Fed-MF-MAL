@@ -236,7 +236,9 @@ class Decentralized_Game:
         reward = self.environment.decentralized_reward_moving(self.environment.sinr_calculation())
         if np.random.rand() < 0.005:
             print(reward, action)
-            myplt.plot_result_hexagon(self.environment.ap_position, action, self.environment.coop_graph.hand_shake_result)
+            myplt.plot_result_hexagon(self.environment.ap_position, action,
+                                      self.environment.coop_graph.hand_shake_result,
+                                      self.environment.user_position)
 
         return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 

@@ -52,13 +52,14 @@ class Connection_Graph:
     def calculate_action_mask(self):
         avaliable_action = []
         for ap in range(self.ap_number):
-            avaliable_action.append(np.ones(13, dtype=bool))
+            avaliable_action.append(np.ones(6, dtype=bool))
         hex_action_indices_map = [[3], [3, 5], [5], [5, 4], [4], [4, 2], [2], [2, 0], [0], [0, 1], [1], [1, 3], None]
         for ap in range(self.ap_number):
             action_index = self.neighbor_indices(ap)
             action_index = [action_index[temp] for temp in hex_action_indices_map]
             action_avail = [np.all(action_ind != -1) for action_ind in action_index]
-            avaliable_action[ap][0:12] = action_avail[0:12]
+            avaliable_action[ap][0:6] = action_avail[1::2]
+            # avaliable_action[ap][0:12] = action_avail[0:12]
         return avaliable_action
 
     def hand_shake(self, ap_actions):
@@ -91,9 +92,21 @@ class Connection_Graph:
                     # roll for another action if current one is not applicapable
                 res_indi = coop_indi[coop_indi != -1]
                 if np.all(np.isin(res_indi, connected_ap)):
-                    self.decision[ap][res_indi] = 1
+                    self.decision[ap][res_indi] = 1 / len(res_indi)
                 else:
                     raise ValueError("Impossible selection, check neighbor indices function")
+
+        circular_connection_expectation = self.decision + np.transpose(self.decision)
+        circular_patch = np.zeros(self.decision.shape)
+        result_action = np.ones(len(ap_actions), dtype=int) * 12
+        for ap, ap_action in enumerate(ap_actions):
+            temp1 = np.where(circular_connection_expectation[ap] == 1)[0]
+            if len(temp1) == 2 and circular_connection_expectation[temp1[0]][temp1[1]] == 1:
+                circular_patch[ap][temp1] = 2
+                circular_patch[temp1[0]][[ap, temp1[1]]] = 2
+                circular_patch[temp1[1]][[ap, temp1[0]]] = 2
+                result_action[ap] = ap_actions[ap]
+                # confirm the circles
 
         hand_shake_bool = np.logical_and(self.decision, np.transpose(self.decision))
         self.hand_shake_result = self.decision * hand_shake_bool
@@ -101,22 +114,35 @@ class Connection_Graph:
         normalize_factor[np.where(normalize_factor == 0)] += 1
         self.hand_shake_result = (self.hand_shake_result / normalize_factor).round(decimals=1)
         # cut hand shake failures
-        self.hand_shake_result = self.hand_shake_result + np.transpose(self.hand_shake_result)
+        self.hand_shake_result = self.hand_shake_result + np.transpose(self.hand_shake_result) + circular_patch
 
         result_action = np.ones(len(ap_actions), dtype=int) * 12
         for ap, ap_action in enumerate(ap_actions):
-            temp = np.where(self.hand_shake_result[ap] == 1)[0]
-            if len(temp) == 2 and self.hand_shake_result[temp[0]][temp[1]] == 1:
-                self.hand_shake_result[ap][temp] = 2
-                result_action[ap] = ap_actions[ap]
-                # confirm the circles
+            temp1 = np.where(self.hand_shake_result[ap] == 1)[0]
+            temp15 = np.where(self.hand_shake_result[ap] == 1.5)[0]
+            temp05 = np.where(self.hand_shake_result[ap] == 0.5)[0]
+            if len(temp1) == 2:
+                if self.hand_shake_result[temp1[0]][temp1[1]] == 1:
+                    self.hand_shake_result[ap][temp1] = 2
+                    self.hand_shake_result[temp1[0]][[ap, temp1[1]]] = 2
+                    self.hand_shake_result[temp1[1]][[ap, temp1[0]]] = 2
+                    result_action[ap] = ap_actions[ap]
+                    # chain connection is ignored here where len(temp1) == 2 and [temp1[0]][temp1[1]] == 0
                 continue
-            temp = np.where(self.hand_shake_result[ap] == 1.5)[0]
-            if len(temp) == 2 and self.hand_shake_result[temp[0]][temp[1]] == 0:
-                self.hand_shake_result[ap][temp] = 2
-                self.hand_shake_result[temp[0]][[ap, temp[1]]] = 2
-                self.hand_shake_result[temp[1]][[ap, temp[0]]] = 2
+            elif len(temp15) == 2 and self.hand_shake_result[temp15[0]][temp15[1]] == 0:
+                self.hand_shake_result[ap][temp15] = 2
+                self.hand_shake_result[temp15[0]][[ap, temp15[1]]] = 2
+                self.hand_shake_result[temp15[1]][[ap, temp15[0]]] = 2
                 # connect triangle connected aps
+            elif len(temp15) + len(temp05) == 2 and self.hand_shake_result[temp05[0]][temp15[0]] == 1:
+                self.hand_shake_result[ap][temp15] = 2
+                self.hand_shake_result[temp15[0]][[ap, temp05[0]]] = 2
+                self.hand_shake_result[temp05[0]][[ap, temp15[0]]] = 2
+            elif len(temp1) + len(temp05) == 2 and self.hand_shake_result[temp1[0]][temp05[0]] == 1.5:
+                self.hand_shake_result[ap][temp1] = 2
+                self.hand_shake_result[temp1[0]][[ap, temp05[0]]] = 2
+                self.hand_shake_result[temp05[0]][[ap, temp1[0]]] = 2
+
             temp = np.where(self.hand_shake_result[ap] > 1)[0]
             if len(temp) == 0:
                 result_action[ap] = 12
@@ -302,7 +328,8 @@ class Channel:
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
-            while not ap_action[action[ap]]:
+            while not ap_action[int((action[ap] - 1)/2)]:
+                # TODO: Notice here when change action size
                 new_action = np.random.randint(0, 13)
                 action[ap] = new_action
         actual_action = self.coop_graph.hand_shake(action)
@@ -478,12 +505,16 @@ class Channel:
         self.user_position = np.array([])
         self.user_qos = np.array([])
         self.user_number = 0
-        return ap_distribute_reward
+        return ap_distribute_reward - 0.5
 
     def decentralized_reward_directional(self, sinr, action):
         sinr_clip = sinr
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         sinr_clip /= gp.USER_QOS
+        if gp.USER_WAITING > 1:
+            self.user_qos[:, 0] -= sinr
+            self.user_qos[:, 1] -= 1
+            rest = np.all(self.user_qos > 0, axis=1)
         # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
         # sinr_x = self.sinr_ap_user_noncoop()
         # sinr_x[np.where(sinr_clip == 0)] = 0
@@ -492,22 +523,31 @@ class Channel:
         # sinr_clip = sinr_clip - sinr_x
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
-        ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 0], ap_observe_relation[:, :, 1]) * 180 / np.pi
-        ap_observe_angle = ap_observe_angle - (150 - (np.ones([self.ap_number, self.user_number]).T * action).T * 30)
-        ap_observe_angle = np.logical_and(ap_observe_angle < 0, ap_observe_angle > -120)
-        ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_distribute_reward = np.logical_and(ap_observe_angle, ap_observe_relation) * sinr_clip
-        normalized_factor = np.sum(np.logical_and(ap_observe_angle, ap_observe_relation), axis=1)
+        ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 1], ap_observe_relation[:, :, 0]) * 180 / np.pi - 360
+        ap_observe_angle = ((150 - (np.ones([self.ap_number, self.user_number]).T * action).T * 30) - ap_observe_angle) % 360
+        ap_observe_angle = np.logical_and(ap_observe_angle > 0, ap_observe_angle < 120)
+        ap_observe_angle[np.where(action == 12)[0], :] = 1
+        ap_observe_relation = np.all(np.absolute(ap_observe_relation) <
+                                     int(gp.REWARD_CAL_RANGE * (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
+        mask = np.logical_and(ap_observe_angle, ap_observe_relation)
+        ap_distribute_reward = mask * sinr_clip
+        normalized_factor = np.sum(mask, axis=1)
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
 
-        if gp.USER_WAITING != 1:
-            raise ValueError("Set user watting to 1 to use these functions")
-        self.user_position = np.array([])
-        self.user_qos = np.array([])
-        self.user_number = 0
-        return ap_distribute_reward
+        # if gp.DEBUG and np.any(ap_distribute_reward[np.where(action != 12)[0]] == 0):
+        #     print("Puse here")
+
+        if gp.USER_WAITING == 1:
+            self.user_position = np.array([])
+            self.user_qos = np.array([])
+            self.user_number = 0
+        else:
+            self.user_position = self.user_position[rest]
+            self.user_qos = self.user_qos[rest]
+            self.user_number = np.sum(rest)
+        return ap_distribute_reward - 0.5
 
 
 if __name__ == "__main__":
@@ -519,8 +559,8 @@ if __name__ == "__main__":
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('isolate')
-        res = x.decentralized_reward_moving(sinr)
+        sinr, action, aa = x.test_sinr('random')
+        res = x.decentralized_reward_directional(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
         res_avg += res
@@ -529,7 +569,7 @@ if __name__ == "__main__":
     res_avg1 = np.zeros(20)
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
-        res = x.decentralized_reward_moving(sinr)
+        res = x.decentralized_reward_directional(sinr, aa)
         res_avg1 += res
     res_avg1 /= 1000
     print(res_avg1)

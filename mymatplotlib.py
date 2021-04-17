@@ -179,9 +179,9 @@ def plot_result_hexagon(ap_position, action, coop_res, user_position, user_color
     # Also add scatter points in hexagon centres
     ax.scatter(ap_position[:, 0], ap_position[:, 1], c=[(col[0], col[1], col[2], col[3]) for col in color_map],
                alpha=0.5)
-    if user_color is None:
+    if user_color is None and user_position.shape[0] != 0:
         ax.scatter(user_position[:, 0], user_position[:, 1], c='black', alpha=0.3)
-    else:
+    elif user_position.shape[0] != 0:
         for user in range(user_position.shape[0]):
             ax.scatter(user_position[user, 0], user_position[user, 1], c='black', alpha=user_color[user])
 

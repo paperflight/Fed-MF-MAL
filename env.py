@@ -488,6 +488,10 @@ class Channel:
         sinr_clip = sinr
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         sinr_clip /= gp.USER_QOS
+        if gp.USER_WAITING > 1:
+            self.user_qos[:, 0] -= sinr
+            self.user_qos[:, 1] -= 1
+            rest = np.all(self.user_qos > 0, axis=1)
         # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
@@ -500,11 +504,14 @@ class Channel:
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
 
-        if gp.USER_WAITING != 1:
-            raise ValueError("Set user watting to 1 to use these functions")
-        self.user_position = np.array([])
-        self.user_qos = np.array([])
-        self.user_number = 0
+        if gp.USER_WAITING == 1:
+            self.user_position = np.array([])
+            self.user_qos = np.array([])
+            self.user_number = 0
+        else:
+            self.user_position = self.user_position[rest]
+            self.user_qos = self.user_qos[rest]
+            self.user_number = np.sum(rest)
         return ap_distribute_reward - 0.5
 
     def decentralized_reward_directional(self, sinr, action):

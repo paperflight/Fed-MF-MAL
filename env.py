@@ -169,6 +169,7 @@ class Connection_Graph:
 class Channel:
     def __init__(self, area, user_distribution, ap_distribution, user_parameters, ap_parameters, channel,
                  associate_type, connect_thre):
+        self.time = 0
         self.user_distri_type, self.user_distri_para = user_distribution
         self.ap_distri_type, self.ap_number, self.ap_distri_space = ap_distribution
         # hex edge is 2 unit, ap-space present 1 unit
@@ -273,7 +274,7 @@ class Channel:
 
     def calculate_small_scale_fading(self):
         num_of_link = self.user_number * self.ap_number
-        random_matrix = np.random.rand(num_of_link)
+        random_matrix = np.random.rand(num_of_link) - 0.5
         if self.small_scale_fading_type == "nakagami":
             self.small_scale_fading = np.reshape(np.asarray(nakagami.rvs(self.small_scale_fading_parameter,
                                                                          size=num_of_link)) *
@@ -281,10 +282,16 @@ class Channel:
                                                   1j * np.sin(2 * np.pi * random_matrix)),
                                                  self.dist_matrix.shape)
         elif self.small_scale_fading_type == "rayleigh_indirect":
-            self.small_scale_fading = np.reshape(np.asarray(rayleigh.rvs(size=num_of_link)) *
-                                                 (np.cos(2 * np.pi * random_matrix) +
-                                                  1j * np.sin(2 * np.pi * random_matrix)),
-                                                 self.dist_matrix.shape)
+            N = 100
+            fd = gp.MAX_USERS_MOBILITY * gp.AP_TRANSMISSION_CENTER_FREUENCY / 3e8  # max Doppler shift
+            alpha = (np.reshape(np.random.rand(num_of_link * N), [num_of_link, N]) - 0.5) * 2 * np.pi
+            phi = (np.reshape(np.random.rand(num_of_link * N), [num_of_link, N]) - 0.5) * 2 * np.pi
+            x = np.reshape(np.random.rand(num_of_link * N), [num_of_link, N]) * np.cos(2 * np.pi * fd * self.time * np.cos(alpha) + phi)
+            y = np.reshape(np.random.rand(num_of_link * N), [num_of_link, N]) * np.sin(2 * np.pi * fd * self.time * np.cos(alpha) + phi)
+            # z is the complex coefficient representing channel, you can think of this as a phase shift and magnitude scale
+            z = (1 / np.sqrt(N)) * (np.sum(x, axis=1) + 1j * np.sum(y, axis=1))
+            # this is what you would actually use when simulating the channel
+            self.small_scale_fading = np.reshape(z, self.dist_matrix.shape)
         elif self.small_scale_fading_type == "rayleigh":
             self.small_scale_fading = np.reshape(np.asarray(np.random.normal(size=num_of_link) +
                                                             1j * np.random.normal(size=num_of_link)),
@@ -371,9 +378,9 @@ class Channel:
         self.channel = self.channel * np.square(np.absolute(precoder * self.small_scale_fading))
         signal = self.channel * signal_mask
         interference = self.channel * interference_mask
-        sinr = np.sum(signal, axis=0) / (-np.sum(interference, axis=0) +
-                                         np.sum(gp.NOISE_THETA * np.square(np.absolute(precoder)) * signal_mask, axis=0)
-                                         / np.sum(signal_mask, axis=0))
+        sinr = np.sum(signal, axis=0) / (-np.sum(interference *
+                                                 np.mean(np.square(np.absolute(precoder * signal)), axis=0), axis=0)
+                                                 + gp.NOISE_THETA)
         if gp.LOG_LEVEL >= 2:
             myplt.table_print_color(sinr, "SINR for UE", gp.UE_COLOR)
         return sinr
@@ -384,6 +391,7 @@ class Channel:
         self.calculate_power_allocation()
         self.calculate_large_scale_fading()
         self.calculate_small_scale_fading()
+        self.time += 1
         self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
         self.calculate_association()
         return self.coop_graph.calculate_action_mask()
@@ -398,6 +406,7 @@ class Channel:
         self.calculate_power_allocation()
         self.calculate_large_scale_fading()
         self.calculate_small_scale_fading()
+        self.time += 1
         self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
         self.calculate_association()
         avail = self.coop_graph.calculate_action_mask()
@@ -452,19 +461,26 @@ class Channel:
         # sinr_clip = sinr_clip - sinr_x
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
+                                                                                (gp.ACCESS_POINTS_FIELD - 1) / 2),
+                                         axis=2)
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
+        ap_observe_relation = np.logical_and(ap_observe_relation_edg, ap_observe_relation)
         ap_distribute_reward = ap_observe_relation * sinr_clip
         normalized_factor = np.sum(ap_observe_relation, axis=1)
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
         # normalization
 
-        if gp.USER_WAITING != 1:
-            raise ValueError("Set user watting to 1 to use these functions")
-        self.user_position = np.array([])
-        self.user_qos = np.array([])
-        self.user_number = 0
-        return ap_distribute_reward
+        if gp.USER_WAITING == 1:
+            self.user_position = np.array([])
+            self.user_qos = np.array([])
+            self.user_number = 0
+        else:
+            self.user_position = self.user_position[rest]
+            self.user_qos = self.user_qos[rest]
+            self.user_number = np.sum(rest)
+        return ap_distribute_reward - 2.5
 
     def decentralized_reward_exclude_central(self, sinr):
         sinr_clip = np.log2(sinr + 1)
@@ -551,7 +567,7 @@ class Channel:
 
 if __name__ == "__main__":
     x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
-                ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, None], "Stronger First",
+                ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
                 13 * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",

@@ -138,8 +138,8 @@ class ReplayMemory:
         next_state = torch.cat([trans.state for trans in transition[self.n:self.n + self.history]]).to(
             device=self.device).to(dtype=torch.float32)
         if self.typeof_black and self.previous_action_obs_ap:
-            state[-1] = self.remove_function(state[-1])
-            next_state[-1] = self.remove_function(next_state[-1])
+            state[-2] = self.remove_function(state[-2])
+            next_state[-2] = self.remove_function(next_state[-2])
         # Discrete action to be used as index
         action = torch.tensor([transition[self.history - 1].action], dtype=torch.int64, device=self.device)
         avail = torch.tensor([transition[self.history - 1].avail]).to(dtype=torch.bool).to(device=self.device)

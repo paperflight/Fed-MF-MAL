@@ -16,6 +16,7 @@ from game import Decentralized_Game as Env
 
 
 def test_parallel(new_game, c_pipe, train_history_aps, eps):
+    new_game.reset_seed()
     train_examples_aps = []
     reward_sum_aps = []
     for index in range(new_game.environment.ap_number):

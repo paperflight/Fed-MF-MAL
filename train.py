@@ -40,17 +40,17 @@ parser.add_argument('--T-max', type=int, default=int(50e6), metavar='STEPS',
 parser.add_argument('--max-episode-length', type=int, default=int(108e3), metavar='LENGTH',
                     help='Max episode length in game frames (0 to disable)')
 # TODO: Note that the change of UAV numbers should also change the history-length variable
-parser.add_argument('--previous-action-observable', action='store_true', help='Observe previous action? (AP)')
-parser.add_argument('--history-length', type=int, default=1, metavar='T',
+parser.add_argument('--previous-action-observable', action='store_false', help='Observe previous action? (AP)')
+parser.add_argument('--history-length', type=int, default=2, metavar='T',
                     help='Total number of history state')
 parser.add_argument('--architecture', type=str, default='canonical_61obv_16ap', metavar='ARCH', help='Network architecture')
 # TODO: if select resnet8, obs v8 and dims 4 should be set in gp
-parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help='Network hidden size')
+parser.add_argument('--hidden-size', type=int, default=512, metavar='SIZE', help='Network hidden size')
 parser.add_argument('--noisy-std', type=float, default=0.5, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
 parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=-0.5, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=1.5, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--V-min', type=float, default=-2, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=4, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')
@@ -69,7 +69,7 @@ parser.add_argument('--priority-weight', type=float, default=0.4, metavar='β',
                     help='Initial prioritised experience replay importance sampling weight')
 parser.add_argument('--multi-step', type=int, default=2, metavar='n',
                     help='Number of steps for multi-step return')
-parser.add_argument('--discount', type=float, default=0.9, metavar='γ', help='Discount factor')
+parser.add_argument('--discount', type=float, default=0.5, metavar='γ', help='Discount factor')
 parser.add_argument('--target-update', type=int, default=int(8000), metavar='τ',
                     help='Number of steps after which to update target network')
 parser.add_argument('--reward-clip', type=int, default=1, metavar='VALUE', help='Reward clipping (0 to disable)')
@@ -202,14 +202,14 @@ if args.model is not None and not args.evaluate:
 else:
     mem_aps = []
     for _ in range(env.environment.ap_number):
-        mem_aps.append(ReplayMemory(args, args.memory_capacity, True))
+        mem_aps.append(ReplayMemory(args, args.memory_capacity, True, env.remove_previous_action))
 
 priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
 
 # Construct validation memory
 val_mem_aps = []
 for _ in range(env.environment.ap_number):
-    val_mem_aps.append(ReplayMemory(args, args.evaluation_size, True, None))
+    val_mem_aps.append(ReplayMemory(args, args.evaluation_size, True, env.remove_previous_action))
 if not gp.PARALLEL_EXICUSION:
     T, done = 0, False
     while T < args.evaluation_size:
@@ -298,7 +298,7 @@ else:
                 # If memory path provided, save it
                 for index in range(env.environment.ap_number):
                     if args.memory is not None:
-                        save_memory(mem_aps[index], args.memory, args.disable_bzip_memory, False, index)
+                        save_memory(mem_aps[index], args.memory, args.disable_bzip_memory, index)
 
                 # Update target network
                 if T % args.target_update == 0:

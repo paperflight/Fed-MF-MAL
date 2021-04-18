@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import GLOBAL_PRARM as gp
 import math
@@ -81,7 +83,10 @@ class Decentralized_Game:
 
     @staticmethod
     def get_action_size():
-        return 6
+        return gp.ACTION_NUM
+
+    def reset_seed(self):
+        np.random.seed(int(time.time() % 1 * 10e8))
 
     def plot_grid_map(self, position_list):
         grid_map = np.zeros([int(self.board_length_l / gp.SQUARE_STEP), int(self.board_length_w / gp.SQUARE_STEP)],
@@ -207,6 +212,32 @@ class Decentralized_Game:
         new_avail[-1] = True
         return new_avail
 
+    def add_previous_action(self, ap_obs, ap_actual_action):
+        hex_action_indices_map = [[3], [3, 5], [5], [5, 4], [4], [4, 2], [2], [2, 0], [0], [0, 1], [1], [1, 3], None]
+        ap_obs = [ap_ob[-self.args.history_length::] for ap_ob in ap_obs]
+        for ap_index, (ap_ob, aps, ap_act) in enumerate(zip(ap_obs, self.environment.ap_position, ap_actual_action)):
+            neighbor_ind = np.where(ap_ob[0] == 1)
+            neighbor_action = hex_action_indices_map[ap_act]
+            if neighbor_action is None:
+                ap_obs[ap_index][0][neighbor_ind] = -1
+                ap_obs[ap_index][0][self.one_side_length, self.one_side_length] = 1
+            else:
+                ap_obs[ap_index][0][neighbor_ind] = -1
+                neighbor_enable = self.environment.coop_graph.neighbor_indices(ap_index, True)
+                neighbor_enable_non = neighbor_enable[neighbor_enable != -1]
+                neighbor_action = np.array(neighbor_action)
+                neighbor_action[neighbor_action >= 3] += 1
+                neighbor_action = np.insert(neighbor_action, 0, 3)
+                matched_ind = [np.where(neighbor_enable_non == neighbor_enable[ind])[0] for ind in neighbor_action]
+                for ind in matched_ind:
+                    ap_obs[ap_index][0][neighbor_ind[0][ind], neighbor_ind[1][ind]] = 1
+        return ap_obs
+
+    @staticmethod
+    def remove_previous_action(state):
+        state[state != 0] = 1
+        return state
+
     def step(self, accesspoint=None, epsilon=0):
         """
             :parameter accesspoint: the models of access points
@@ -223,24 +254,32 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action_re, _ = self.environment.random_action('double', avil_action)
+            action, _ = self.environment.random_action('double', avil_action)
+            action_re = action
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
                 action.append(accesspoint[index].act_e_greedy(ap_state[index], avil_action[index],
                                                               epsilon, self.args.action_selection))
                 # Choose an action greedily (with noisy weights)
-            action_re = np.array(action) * 2 + 1
+            if gp.ACTION_NUM != 13:
+                action_re = np.array(action) * 2 + 1
+            else:
+                action_re = action
 
         actual_action = self.environment.set_action(action_re)
         reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
+
+        if self.args.previous_action_observable:
+            ap_state = self.add_previous_action(ap_state, actual_action)
+
         if np.random.rand() < 0.005:
             print(reward, action_re, actual_action)
             # myplt.plot_result_hexagon(self.environment.ap_position, action_re,
             #                           self.environment.coop_graph.hand_shake_result,
             #                           self.environment.user_position)
 
-        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -258,19 +297,26 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action_re, _ = self.environment.random_action('double', avil_action)
+            action, _ = self.environment.random_action('double', avil_action)
+            action_re = action
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):
                 pipe.send((ap_state[index], avil_action[index]))
                 action.append(pipe.recv())
                 # Choose an action greedily (with noisy weights)
+        if gp.ACTION_NUM != 13:
             action_re = np.array(action) * 2 + 1
+        else:
+            action_re = action
 
         actual_action = self.environment.set_action(action_re)
         reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
 
-        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        if self.args.previous_action_observable:
+            ap_state = self.add_previous_action(ap_state, actual_action)
+
+        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def close(self):
         del self

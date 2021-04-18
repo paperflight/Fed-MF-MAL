@@ -26,7 +26,7 @@ class Connection_Graph:
         self.decision = np.zeros(self.connection_graph.shape)
         self.hand_shake_result = np.zeros(self.connection_graph.shape)
 
-    def neighbor_indices(self, target_indice):
+    def neighbor_indices(self, target_indice, additself=False):
         up_l_edge: int = target_indice % self.ap_side_number
         if (target_indice // self.ap_side_number) % 2 == 0:
             indi = np.array(
@@ -47,19 +47,23 @@ class Connection_Graph:
             elif up_l_edge == 0:
                 indi[2] = -1
         indi[np.where(np.logical_or(indi < 0, indi >= self.ap_number))] = -1
+        if additself:
+            indi = np.insert(indi, 3, target_indice)
         return indi
 
     def calculate_action_mask(self):
         avaliable_action = []
         for ap in range(self.ap_number):
-            avaliable_action.append(np.ones(6, dtype=bool))
+            avaliable_action.append(np.ones(gp.ACTION_NUM, dtype=bool))
         hex_action_indices_map = [[3], [3, 5], [5], [5, 4], [4], [4, 2], [2], [2, 0], [0], [0, 1], [1], [1, 3], None]
         for ap in range(self.ap_number):
             action_index = self.neighbor_indices(ap)
             action_index = [action_index[temp] for temp in hex_action_indices_map]
             action_avail = [np.all(action_ind != -1) for action_ind in action_index]
-            avaliable_action[ap][0:6] = action_avail[1::2]
-            # avaliable_action[ap][0:12] = action_avail[0:12]
+            if gp.ACTION_NUM == 6:
+                avaliable_action[ap][0:6] = action_avail[1::2]
+            else:
+                avaliable_action[ap][0:12] = action_avail[0:12]
         return avaliable_action
 
     def hand_shake(self, ap_actions):
@@ -289,8 +293,7 @@ class Channel:
     def calculate_association(self):
         self.association_result = self.association_result * 0
         if self.associate_type == "Stronger First":
-            self.association_result[np.argmax(self.power_gain + self.large_scale_fading, axis=0),
-                                    range(self.user_number)] = 1
+            self.association_result[np.argmax(self.channel, axis=0), range(self.user_number)] = 1
 
     def map_association_with_coop_decision(self):
         self.coop_decision += np.eye(self.coop_decision.shape[0], dtype=int)
@@ -328,7 +331,7 @@ class Channel:
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
-            while not ap_action[int((action[ap] - 1)/2)]:
+            while not ap_action[action[ap]]:
                 # TODO: Notice here when change action size
                 new_action = np.random.randint(0, 13)
                 action[ap] = new_action
@@ -355,32 +358,9 @@ class Channel:
         return precoder
 
     def sinr_ap_user(self):
-        self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
         precoder = self.precoder_ap_user()
         mask: np.ndarray = self.coop_decision - \
                            0.5 * np.ones(self.coop_decision.shape) * np.sum(self.coop_decision, axis=1, keepdims=True,
-                                                                            dtype=bool)
-        mask = mask * 2  # convert to -1, 0, 1
-        signal_mask, interference_mask = np.copy(mask), np.copy(mask)
-        signal_mask[signal_mask < 0] = 0
-        interference_mask[interference_mask > 0] = 0
-        precoder *= signal_mask
-        precoder[precoder == 0] = 1
-        self.channel = self.channel * np.square(np.absolute(precoder * self.small_scale_fading))
-        signal = self.channel * signal_mask
-        interference = self.channel * interference_mask
-        sinr = np.sum(signal, axis=0) / (-np.sum(interference, axis=0) +
-                                         np.sum(gp.NOISE_THETA * np.square(np.absolute(precoder)) * signal_mask, axis=0)
-                                         / np.sum(signal_mask, axis=0))
-        if gp.LOG_LEVEL >= 2:
-            myplt.table_print_color(sinr, "SINR for UE", gp.UE_COLOR)
-        return sinr
-
-    def sinr_ap_user_noncoop(self):
-        self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
-        precoder = self.precoder_ap_user()
-        mask: np.ndarray = self.association_result - \
-                           0.5 * np.ones(self.coop_decision.shape) * np.sum(self.association_result, axis=1, keepdims=True,
                                                                             dtype=bool)
         mask = mask * 2  # convert to -1, 0, 1
         signal_mask, interference_mask = np.copy(mask), np.copy(mask)
@@ -404,6 +384,7 @@ class Channel:
         self.calculate_power_allocation()
         self.calculate_large_scale_fading()
         self.calculate_small_scale_fading()
+        self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
         self.calculate_association()
         return self.coop_graph.calculate_action_mask()
 
@@ -417,6 +398,7 @@ class Channel:
         self.calculate_power_allocation()
         self.calculate_large_scale_fading()
         self.calculate_small_scale_fading()
+        self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
         self.calculate_association()
         avail = self.coop_graph.calculate_action_mask()
         action, actual_action = self.random_action(action_type, avail)
@@ -458,7 +440,7 @@ class Channel:
         return ap_distribute_reward
 
     def decentralized_reward(self, sinr):
-        sinr_clip = sinr
+        sinr_clip = np.log2(sinr + 1)
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         sinr_clip /= gp.USER_QOS
         # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
@@ -485,13 +467,14 @@ class Channel:
         return ap_distribute_reward
 
     def decentralized_reward_exclude_central(self, sinr):
-        sinr_clip = sinr
+        sinr_clip = np.log2(sinr + 1)
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         sinr_clip /= gp.USER_QOS
-        if gp.USER_WAITING > 1:
-            self.user_qos[:, 0] -= sinr
-            self.user_qos[:, 1] -= 1
-            rest = np.all(self.user_qos > 0, axis=1)
+        self.user_qos[:, 0] -= sinr
+        self.user_qos[:, 1] -= 1
+        rest = np.all(self.user_qos > 0, axis=1)
+        gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
+
         # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
@@ -515,13 +498,13 @@ class Channel:
         return ap_distribute_reward - 0.5
 
     def decentralized_reward_directional(self, sinr, action):
-        sinr_clip = sinr
+        sinr_clip = np.log2(sinr + 1)
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         sinr_clip /= gp.USER_QOS
-        if gp.USER_WAITING > 1:
-            self.user_qos[:, 0] -= sinr
-            self.user_qos[:, 1] -= 1
-            rest = np.all(self.user_qos > 0, axis=1)
+        self.user_qos[:, 0] -= sinr
+        self.user_qos[:, 1] -= 1
+        rest = np.all(self.user_qos > 0, axis=1)
+        gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
         # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
         # sinr_x = self.sinr_ap_user_noncoop()
         # sinr_x[np.where(sinr_clip == 0)] = 0
@@ -532,11 +515,16 @@ class Channel:
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
         ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 1], ap_observe_relation[:, :, 0]) * 180 / np.pi - 360
         ap_observe_angle = ((150 - (np.ones([self.ap_number, self.user_number]).T * action).T * 30) - ap_observe_angle) % 360
+        # ap_observe_angle_thre_up, ap_observe_angle_thre_do = np.ones(ap_observe_angle.shape), np.ones(ap_observe_angle.shape)
+        # ap_observe_angle_thre_up *= np.expand_dims(30 - 30 * (action % 2), axis=1)
+        # ap_observe_angle_thre_do *= np.expand_dims(90 + 30 * (action % 2), axis=1)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
+                                                                                (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
         ap_observe_angle = np.logical_and(ap_observe_angle > 0, ap_observe_angle < 120)
         ap_observe_angle[np.where(action == 12)[0], :] = 1
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) <
                                      int(gp.REWARD_CAL_RANGE * (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        mask = np.logical_and(ap_observe_angle, ap_observe_relation)
+        mask = np.logical_and(np.logical_and(ap_observe_angle, ap_observe_relation), ap_observe_relation_edg)
         ap_distribute_reward = mask * sinr_clip
         normalized_factor = np.sum(mask, axis=1)
         normalized_factor[normalized_factor == 0] = 1
@@ -554,7 +542,11 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
-        return ap_distribute_reward - 0.5
+            # self.large_scale_fading = self.large_scale_fading[:, rest]
+            # self.small_scale_fading = self.small_scale_fading[:, rest]
+            # self.coop_decision = self.coop_decision[:, rest]
+            # self.channel = self.channel[:, rest]
+        return (ap_distribute_reward - 0.5) * 5
 
 
 if __name__ == "__main__":

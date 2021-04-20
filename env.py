@@ -8,6 +8,9 @@ from collections import defaultdict, deque
 import GLOBAL_PRARM as gp
 import mymatplotlib as myplt
 
+# from pympler.tracker import SummaryTracker
+# tracker = SummaryTracker()
+
 
 class Connection_Graph:
     def __init__(self, ap_position, connect_threshold: int):
@@ -230,7 +233,7 @@ class Channel:
         if self.user_position.shape[0] == 0 or self.time % gp.USER_ADDING == 0:
             new_user_qos = np.ones([self.user_number - self.user_qos.shape[0], 2]) * gp.USER_QOS
             new_user_qos[:, 1] = gp.USER_WAITING
-            self.user_qos = np.concatenate((self.user_qos, new_user_qos))
+            self.user_qos = np.concatenate((new_user_qos, self.user_qos))
 
     def location_init(self):
         if gp.DEBUG and self.user_number <= 0 or self.ap_number <= 0:
@@ -240,7 +243,7 @@ class Channel:
                                                       for _ in range(self.user_number - self.user_position.shape[0])])
             # new_user_position: np.ndarray = np.array([np.random.rand(2) * [50, 50]
             #                                          for _ in range(self.user_number - self.user_position.shape[0])])
-            self.user_position = np.concatenate((self.user_position, new_user_position))
+            self.user_position = np.concatenate((new_user_position, self.user_position))
         self.ap_position = \
             np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 0.1 + x % 2)]
                         for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
@@ -320,7 +323,7 @@ class Channel:
         if not gp.DEBUG:
             raise TypeError("Function only called in Debug Mode")
         if action_type == 'random':
-            action = np.random.randint(13, size=self.ap_number)
+            action = np.random.randint(12, size=self.ap_number)
         elif action_type == 'isolate':
             action = np.ones(self.ap_number, dtype=int) * 12
         elif action_type == 'updown':
@@ -515,7 +518,7 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
-        ap_distribute_reward[np.where(aa == 12)[0]] = -0.25
+        ap_distribute_reward[np.where(aa == 12)[0]] = -0.5
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
         return ap_distribute_reward / 5
 
@@ -605,7 +608,7 @@ class Channel:
 
 
 if __name__ == "__main__":
-    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 250], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
+    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 100], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
                 ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
                 13 * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
@@ -613,11 +616,13 @@ if __name__ == "__main__":
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('updown')
+        sinr, action, aa = x.test_sinr('random')
         res = x.decentralized_reward_step(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
         res_avg += res
+        # if _% 100 == 0:
+        #     tracker.print_diff()
     res_avg /= 1000
     print(res_avg)
     res_avg1 = np.zeros(20)

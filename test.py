@@ -24,6 +24,7 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
 
     for _ in range(eps):
         state, action, avail, reward, done = new_game.step_p(c_pipe)  # Step
+        # print(action, reward)
         reward_sum_aps.append(reward)
 
     # reward_sum_aps = np.mean(reward_sum_aps, axis=0)

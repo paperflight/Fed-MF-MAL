@@ -30,6 +30,9 @@ from game import Decentralized_Game as Env
 from memory import ReplayMemory
 from test import test, test_p
 
+# from pympler.tracker import SummaryTracker
+# tracker = SummaryTracker()
+
 # Note that hyperparameters may originally be reported in ATARI game frames instead of agent steps
 parser = argparse.ArgumentParser(description='Rainbow')
 parser.add_argument('--id', type=str, default='default', help='Experiment ID')
@@ -40,7 +43,7 @@ parser.add_argument('--T-max', type=int, default=int(50e6), metavar='STEPS',
 parser.add_argument('--max-episode-length', type=int, default=int(108e3), metavar='LENGTH',
                     help='Max episode length in game frames (0 to disable)')
 # TODO: Note that the change of UAV numbers should also change the history-length variable
-parser.add_argument('--previous-action-observable', action='store_true', help='Observe previous action? (AP)')
+parser.add_argument('--previous-action-observable', action='store_false', help='Observe previous action? (AP)')
 parser.add_argument('--history-length', type=int, default=2, metavar='T',
                     help='Total number of history state')
 parser.add_argument('--architecture', type=str, default='canonical_61obv_16ap', metavar='ARCH', help='Network architecture')
@@ -281,6 +284,7 @@ else:
             #     # append rotated observation for data reinforcement
 
         if T >= args.learn_start:
+            # tracker.print_diff()
             for index in range(env.environment.ap_number):
                 mem_aps[index].priority_weight = min(mem_aps[index].priority_weight + priority_weight_increase, 1)
                 # Anneal importance sampling weight β to 1

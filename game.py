@@ -64,7 +64,6 @@ class Decentralized_Game:
                             "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
 
         self.state_buffer = []
-        self.scheduler_buffer = deque([], maxlen=self.args.history_length)
         self.history_buffer_length = args.history_length
         if args.history_length <= 1 and args.previous_action_observable:
             raise ValueError("Illegal setting avaliable previous action with less or equal than 1 history length")
@@ -87,6 +86,25 @@ class Decentralized_Game:
 
     def reset_seed(self):
         np.random.seed(int(time.time() % 1 * 10e8))
+        del self.environment
+        self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
+                                       ["PPP", gp.DENSE_OF_USERS],
+                                       ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
+                                       [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
+                                       [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
+                                       ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M,
+                                        'zero_forcing'],
+                                       "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
+        self.state_buffer = []
+        self.aps_observation = []
+        self.state_buffer = []
+        for _ in range(self.environment.ap_number):
+            self.state_buffer.append(deque([], maxlen=self.args.history_length))
+
+        for index in range(self.environment.ap_number):
+            for _ in range(self.history_buffer_length):
+                self.state_buffer[index].append(torch.zeros(gp.OBSERVATION_DIMS, int(self.one_side_length * 2 + 1),
+                                                            int(self.one_side_length * 2 + 1), device=self.args.device))
 
     def plot_grid_map(self, position_list):
         grid_map = np.zeros([int(self.board_length_l / gp.SQUARE_STEP), int(self.board_length_w / gp.SQUARE_STEP)],

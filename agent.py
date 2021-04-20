@@ -97,7 +97,7 @@ class Agent:
             if avail is None:
                 return (self.online_net(state.unsqueeze(0)) * self.support).sum(2).argmax(1).item()
             temp = (self.online_net(state.unsqueeze(0)) * self.support).sum(2) * torch.tensor(avail)
-            temp[:, avail == 0] = (torch.min(temp) - 10)
+            temp[:, avail == 0] = (torch.min(temp) - 100)
             return temp.argmax(1).item()
 
     # Acts with an ε-greedy policy (used for evaluation only)
@@ -141,7 +141,7 @@ class Agent:
                                 pipes.close()
                                 list_pro[key] = False
                                 continue
-                        pipes.send(self.act(obs, avial).numpy())
+                        pipes.send(self.act_boltzmann(obs, avial).numpy())
                         # convert back to numpy or cpu-tensor, or it will cause error since cuda try to run in
                         # another thread. Keep the gpu resource inside main thread
 
@@ -156,7 +156,7 @@ class Agent:
                         pipes.close()
                         list_pro[key] = False
                         continue
-                    pipes.send(self.act(obs, avial))
+                    pipes.send(self.act_boltzmann(obs, avial))
             else:
                 list_pro[key] = False
             # convert back to numpy or cpu-tensor, or it will cause error since cuda try to run in

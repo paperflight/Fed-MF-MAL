@@ -599,7 +599,9 @@ class Channel:
             # self.small_scale_fading = self.small_scale_fading[:, rest]
             # self.coop_decision = self.coop_decision[:, rest]
             # self.channel = self.channel[:, rest]
-        return ap_distribute_reward - 0.5
+        ap_distribute_reward[np.where(action == 12)[0]] = -0.25
+        # ap_distribute_reward[ap_distribute_reward > 2] = 2
+        return ap_distribute_reward / 5
 
 
 if __name__ == "__main__":

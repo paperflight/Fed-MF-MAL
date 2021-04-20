@@ -123,17 +123,15 @@ class DQN(nn.Module):
 
         if 'canonical' in args.architecture and '61obv' in args.architecture and '16ap' in args.architecture:
             self.convs = nn.Sequential(nn.Conv2d(args.history_length * gp.OBSERVATION_DIMS, 16, 8, stride=3, padding=2), nn.LeakyReLU(),
-                                       nn.Conv2d(16, 32, 4, stride=1, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(),
+                                       nn.Conv2d(16, 32, 4, stride=2, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(),
                                        nn.Conv2d(32, 32, 3, stride=1, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(),
                                        nn.Dropout2d(0.2))
-            self.conv_output_size = 3200  # 41: 2: 1600  # 61: 2: 2368 3: 3200 4: 4288  # 4 uav: 4992
-        elif 'canonical' in args.architecture and '41obv' in args.architecture and '2uav' in args.architecture:
-            self.convs = nn.Sequential(nn.Conv2d(args.history_length_accesspoint, 16, 8, stride=3, padding=2), nn.LeakyReLU(),
-                                       nn.Conv2d(16, 32, 4, stride=2, padding=1), nn.BatchNorm2d(32), nn.LeakyReLU(),
-                                       nn.Conv2d(32, 64, 3, stride=1, padding=1), nn.BatchNorm2d(64), nn.LeakyReLU(),
-                                       nn.Conv2d(64, 64, 3, stride=1, padding=0), nn.BatchNorm2d(64), nn.LeakyReLU(),
-                                       nn.Dropout2d(0.2))
-            self.conv_output_size = 1600  # 41: 2: 1600
+            self.conv_output_size = 512  # 41: 2: 1600  # 61: 2: 2368 3: 3200 4: 4288  # 4 uav: 4992
+        elif 'canonical' in args.architecture and 'pooling' in args.architecture and '20ap' in args.architecture:
+            self.convs = nn.Sequential(nn.Conv2d(args.history_length * gp.OBSERVATION_DIMS, 16, 47, stride=23,
+                                                 groups=2, padding=23),
+                                       nn.BatchNorm2d(16), nn.LeakyReLU())
+            self.conv_output_size = 144  # 41: 2: 1600
         elif 'canonical' in args.architecture and '61obv' in args.architecture and '4uav' in args.architecture:
             self.convs = nn.Sequential(nn.Conv2d(args.history_length_accesspoint, 16, 8, stride=3, padding=2), nn.LeakyReLU(),
                                        nn.Conv2d(16, 32, 4, stride=2, padding=1), nn.BatchNorm2d(32), nn.LeakyReLU(),

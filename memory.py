@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import GLOBAL_PRARM as gp
 
-Transition = namedtuple('Transition', ('timestep', 'state', 'action', 'avail', 'reward', 'nonterminal'))
+Transition = namedtuple('Transition', ('timestep', 'state', 'action', 'avail', 'reward', 'avg_r', 'nonterminal'))
 blank_trans_aps = Transition(0, torch.zeros([gp.OBSERVATION_DIMS, int(np.ceil(gp.ACCESS_POINTS_FIELD / gp.SQUARE_STEP)),
-                                            int(np.ceil(gp.ACCESS_POINTS_FIELD / gp.SQUARE_STEP))], dtype=torch.float32), None, None, 0, False)
+                                            int(np.ceil(gp.ACCESS_POINTS_FIELD / gp.SQUARE_STEP))], dtype=torch.float32), None, None, 0, 0, False)
 # TODO: Change the size of black_trans which should match with observation
 
 
@@ -89,10 +89,10 @@ class ReplayMemory:
         # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
 
     # Adds state and action at time t, reward and terminal at time t + 1
-    def append(self, state, action, avail, reward, terminal):
+    def append(self, state, action, avail, reward, avg_r, terminal):
         state = state.to(dtype=torch.float32, device=torch.device('cpu'))
         # Only store last frame and discretise to save memory
-        self.transitions.append(Transition(self.t, state, action, avail, reward, not terminal),
+        self.transitions.append(Transition(self.t, state, action, avail, reward, avg_r, not terminal),
                                 self.transitions.max)  # Store new transition with maximum priority
         self.t = 0 if terminal else self.t + 1  # Start new episodes with t = 0
 
@@ -144,7 +144,7 @@ class ReplayMemory:
         action = torch.tensor([transition[self.history - 1].action], dtype=torch.int64, device=self.device)
         avail = torch.tensor([transition[self.history - 1].avail]).to(dtype=torch.bool).to(device=self.device)
         # Calculate truncated n-step discounted return R^n = Σ_k=0->n-1 (γ^k)R_t+k+1 (note that invalid nth next states have reward 0)
-        R = torch.stack([sum(self.discount ** n * transition[self.history + n - 1].reward
+        R = torch.stack([sum(self.discount ** n * (transition[self.history + n - 1].reward - transition[self.history + n - 1].avg_r)
                              for n in range(self.n))]).to(device=self.device).to(dtype=torch.float32)
         # Mask for non-terminal nth next states
         nonterminal = torch.tensor([transition[self.history + self.n - 1].nonterminal], dtype=torch.float32,

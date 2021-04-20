@@ -45,12 +45,12 @@ parser.add_argument('--history-length', type=int, default=2, metavar='T',
                     help='Total number of history state')
 parser.add_argument('--architecture', type=str, default='canonical_61obv_16ap', metavar='ARCH', help='Network architecture')
 # TODO: if select resnet8, obs v8 and dims 4 should be set in gp
-parser.add_argument('--hidden-size', type=int, default=512, metavar='SIZE', help='Network hidden size')
+parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help='Network hidden size')
 parser.add_argument('--noisy-std', type=float, default=0.5, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
 parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=-2, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=4, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--V-min', type=float, default=-0.5, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=0.5, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')
@@ -67,13 +67,15 @@ parser.add_argument('--priority-exponent', type=float, default=0.5, metavar='ω'
                     help='Prioritised experience replay exponent (originally denoted α)')
 parser.add_argument('--priority-weight', type=float, default=0.4, metavar='β',
                     help='Initial prioritised experience replay importance sampling weight')
-parser.add_argument('--multi-step', type=int, default=2, metavar='n',
+parser.add_argument('--multi-step', type=int, default=3, metavar='n',
                     help='Number of steps for multi-step return')
-parser.add_argument('--discount', type=float, default=0.5, metavar='γ', help='Discount factor')
-parser.add_argument('--target-update', type=int, default=int(8000), metavar='τ',
+parser.add_argument('--discount', type=float, default=1, metavar='γ', help='Discount factor')
+parser.add_argument('--target-update', type=int, default=int(2000), metavar='τ',
                     help='Number of steps after which to update target network')
-parser.add_argument('--reward-clip', type=int, default=1, metavar='VALUE', help='Reward clipping (0 to disable)')
+parser.add_argument('--reward-clip', type=int, default=5, metavar='VALUE', help='Reward clipping (0 to disable)')
 parser.add_argument('--learning-rate', type=float, default=0.0000625, metavar='η', help='Learning rate')
+parser.add_argument('--reward-update-rate', type=float, default=0.01, metavar='η',
+                    help='Average value step rate (for non-episodic task)')
 parser.add_argument('--adam-eps', type=float, default=1.5e-4, metavar='ε', help='Adam epsilon')
 parser.add_argument('--batch-size', type=int, default=32, metavar='SIZE', help='Batch size')
 parser.add_argument('--better-indicator', type=float, default=1.0, metavar='b',
@@ -169,7 +171,7 @@ def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode)
     while eps < episode:
         state, action, avail, reward, done_pp = new_game.step()  # Step
         for index_p, ele_p in enumerate(state):
-            train_examples_aps[index_p].append((ele_p, None, None, None, done_pp))
+            train_examples_aps[index_p].append((ele_p, None, None, None, None, done_pp))
         eps += 1
     train_history_aps_parallel.append(train_examples_aps)
     
@@ -215,7 +217,7 @@ if not gp.PARALLEL_EXICUSION:
     while T < args.evaluation_size:
         state, action, avail, reward, done = env.step()
         for index, ele in enumerate(state):
-            val_mem_aps[index].append(ele, None, None, None, done)
+            val_mem_aps[index].append(ele, None, None, None, None, done)
         T += 1
 else:
     num_cores = min(multiprocessing.cpu_count(), gp.ALLOCATED_CORES) - 1
@@ -238,8 +240,8 @@ else:
 
         for res in train_history_aps:
             for index, memerys in enumerate(res):
-                for state, _, _, _, done in memerys:
-                    val_mem_aps[index].append(state, None, None, None, done)
+                for state, _, _, _, _, done in memerys:
+                    val_mem_aps[index].append(state, None, None, None, None, done)
 
 if args.evaluate:
     for index in range(env.environment.ap_number):
@@ -264,7 +266,7 @@ else:
             if args.reward_clip > 0:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
             if not reward[_] == 0:
-                mem_aps[_].append(state[_], int(action[_] - 1)/2, avail[_], reward[_], done)  # Append transition to memory
+                mem_aps[_].append(state[_], int(action[_] - 1)/2, avail[_], reward[_], dqn[_].average_reward, done)  # Append transition to memory
             # data reinforcement, not applicapable with infinite environment
             # obs = state[_]
             # act = action[_]
@@ -325,7 +327,8 @@ else:
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + '   Worse model, reject.')
             for index in range(env.environment.ap_number):
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + '  For ap' + str(index) +
-                    ' | Avg. reward: ' + str(aps_pack[0][index]) + ' | Avg. Q: ' + str(aps_pack[1][index]))
+                    ' | Avg. reward: ' + str(aps_pack[0][index]) + ' | Avg. Q: ' + str(aps_pack[1][index])
+                    + ' | Avg. R: ' + str(float(dqn[index].average_reward)))
 
             for index in range(env.environment.ap_number):
                 dqn[index].train()  # Set DQN (online network) back to training mode

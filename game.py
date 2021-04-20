@@ -60,7 +60,7 @@ class Decentralized_Game:
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
-                            ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, None],
+                            ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, 'zero_forcing'],
                             "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
 
         self.state_buffer = []
@@ -213,7 +213,7 @@ class Decentralized_Game:
         return new_avail
 
     def add_previous_action(self, ap_obs, ap_actual_action):
-        hex_action_indices_map = [[3], [3, 5], [5], [5, 4], [4], [4, 2], [2], [2, 0], [0], [0, 1], [1], [1, 3], None]
+        hex_action_indices_map = [[3], [3, 5], [5], [4, 5], [4], [2, 4], [2], [0, 2], [0], [0, 1], [1], [1, 3], None]
         ap_obs = [ap_ob[-self.args.history_length::] for ap_ob in ap_obs]
         for ap_index, (ap_ob, aps, ap_act) in enumerate(zip(ap_obs, self.environment.ap_position, ap_actual_action)):
             neighbor_ind = np.where(ap_ob[0] == 1)
@@ -230,7 +230,9 @@ class Decentralized_Game:
                 neighbor_action = np.insert(neighbor_action, 0, 3)
                 matched_ind = [np.where(neighbor_enable_non == neighbor_enable[ind])[0] for ind in neighbor_action]
                 for ind in matched_ind:
-                    ap_obs[ap_index][0][neighbor_ind[0][ind], neighbor_ind[1][ind]] = 1
+                    ap_obs[ap_index][0][neighbor_ind[0][ind], neighbor_ind[1][ind]] = \
+                        ap_actual_action[neighbor_enable_non[ind]].item(0) + 1
+                ap_obs[ap_index][0] /= 12
         return ap_obs
 
     @staticmethod
@@ -262,13 +264,13 @@ class Decentralized_Game:
                 action.append(accesspoint[index].act_e_greedy(ap_state[index], avil_action[index],
                                                               epsilon, self.args.action_selection))
                 # Choose an action greedily (with noisy weights)
-            if gp.ACTION_NUM != 13:
+            if gp.ACTION_NUM == 6:
                 action_re = np.array(action) * 2 + 1
             else:
                 action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
+        reward = self.environment.decentralized_reward_step(self.environment.sinr_calculation(), actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
@@ -279,7 +281,7 @@ class Decentralized_Game:
             #                           self.environment.coop_graph.hand_shake_result,
             #                           self.environment.user_position)
 
-        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def step_p(self, accesspoint=None):
         """
@@ -305,18 +307,18 @@ class Decentralized_Game:
                 pipe.send((ap_state[index], avil_action[index]))
                 action.append(pipe.recv())
                 # Choose an action greedily (with noisy weights)
-        if gp.ACTION_NUM != 13:
+        if gp.ACTION_NUM == 6:
             action_re = np.array(action) * 2 + 1
         else:
             action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
+        reward = self.environment.decentralized_reward_step(self.environment.sinr_calculation(), actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
-        return ap_state, actual_action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def close(self):
         del self

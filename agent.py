@@ -25,6 +25,8 @@ class Agent:
         self.discount = args.discount
         self.device = args.device
         self.net_type = args.architecture
+        self.reward_update_rate = args.reward_update_rate
+        self.average_reward = 0
 
         self.online_net = DQN(args, self.action_space).to(device=args.device)
         if args.model:  # Load pretrained model if provided
@@ -210,6 +212,9 @@ class Agent:
                                   (pns_a * (b - l.float())).view(-1))  # m_u = m_u + p(s_t+n, a*)(b - l)
 
         loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
+        self.average_reward = self.average_reward + \
+                              self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
+                                               pns_a * self.support - log_ps_a * self.support)
         self.online_net.zero_grad()
         (weights * loss).mean().backward()  # Backpropagate importance-weighted minibatch loss
         # clip_grad_norm_(self.online_net.parameters(), 1.0, norm_type=1)

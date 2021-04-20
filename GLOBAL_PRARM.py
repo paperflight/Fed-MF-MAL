@@ -7,11 +7,12 @@ NUM_OF_ACCESSPOINT = 20
 ACCESSPOINT_SPACE = 13  # the edge of each HEX is 2 unit
 ACCESS_POINTS_FIELD = np.floor(2 * np.sqrt(3) * ACCESSPOINT_SPACE * 2) + 3  # must be odd
 
-DENSE_OF_USERS = 250
+DENSE_OF_USERS = 100
 
 MAX_USERS_MOBILITY = 1
-USER_QOS = 5
-USER_WAITING = 2
+USER_QOS = 15
+USER_WAITING = 3
+USER_ADDING = 2
 
 AP_TRANSMISSION_CENTER_FREUENCY = 5e9
 
@@ -44,7 +45,7 @@ OBSERVATION_DIMS = 2  # each cluster has three observations: ap position, user p
 # TODO: when selecting observation 4 and 5, change the observation dims too
 OBSERVATION_VERSION = 1  # 1: observation v1, 2 observation v2
 # for details look into game.get_observation_vx() function
-ACTION_NUM = 13
+ACTION_NUM = 12
 
 
 # training and loading parameters

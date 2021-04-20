@@ -519,7 +519,7 @@ class Channel:
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
         return ap_distribute_reward / 5
 
-    def decentralized_reward_exclude_central(self, sinr):
+    def decentralized_reward_exclude_central(self, sinr, action):
         sinr_clip = np.log2(sinr + 1)
         # sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         # sinr_clip /= gp.USER_QOS
@@ -548,7 +548,7 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
-        return ap_distribute_reward - 1
+        return ap_distribute_reward / 5
 
     def decentralized_reward_directional(self, sinr, action):
         sinr_clip = np.log2(sinr + 1)

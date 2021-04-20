@@ -40,7 +40,7 @@ parser.add_argument('--T-max', type=int, default=int(50e6), metavar='STEPS',
 parser.add_argument('--max-episode-length', type=int, default=int(108e3), metavar='LENGTH',
                     help='Max episode length in game frames (0 to disable)')
 # TODO: Note that the change of UAV numbers should also change the history-length variable
-parser.add_argument('--previous-action-observable', action='store_false', help='Observe previous action? (AP)')
+parser.add_argument('--previous-action-observable', action='store_true', help='Observe previous action? (AP)')
 parser.add_argument('--history-length', type=int, default=2, metavar='T',
                     help='Total number of history state')
 parser.add_argument('--architecture', type=str, default='canonical_61obv_16ap', metavar='ARCH', help='Network architecture')
@@ -49,8 +49,8 @@ parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help
 parser.add_argument('--noisy-std', type=float, default=0.5, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
 parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=-0.5, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=0.5, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--V-min', type=float, default=-1, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=1, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')

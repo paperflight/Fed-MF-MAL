@@ -222,10 +222,13 @@ class ReplayMemory:
             blank_mask[t] = np.logical_or(blank_mask[t + 1],
                                           transitions_firsts[t + 1])  # If future frame has timestep 0
         transitions[blank_mask] = blank_trans_aps
-        state = torch.tensor(transitions['state'], dtype=torch.float32, device=self.device).div_(
-            255)  # Agent will turn into batch
+        state = torch.tensor(transitions['state'], dtype=torch.float32, device=self.device).div_(scale_factor)
+        state = torch.reshape(state, (-1, state.shape[-2], state.shape[-1]))
+        state[0::gp.OBSERVATION_DIMS] = torch.round((state[0::gp.OBSERVATION_DIMS] - 0.5) * 2)
+        # Agent will turn into batch
         if self.typeof_black and self.previous_action_obs_ap:
-            state_stack[-2] = self.remove_function(state_stack[-2])
+            state[gp.OBSERVATION_DIMS * (self.history - 1), :, :] = \
+                self.remove_function(state[gp.OBSERVATION_DIMS * (self.history - 1), :, :])
         self.current_idx += 1
         return state
 

@@ -214,7 +214,8 @@ class Agent:
         loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
         self.average_reward = self.average_reward + \
                               self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
-                                               pns_a * self.support - log_ps_a * self.support)
+                                               pns_a.detach() * self.support - log_ps_a.detach() * self.support)
+        self.average_reward = self.average_reward.detach()
         self.online_net.zero_grad()
         (weights * loss).mean().backward()  # Backpropagate importance-weighted minibatch loss
         # clip_grad_norm_(self.online_net.parameters(), 1.0, norm_type=1)

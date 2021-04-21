@@ -446,9 +446,9 @@ class Channel:
 
     def decentralized_reward(self, sinr):
         sinr_clip = np.log2(sinr + 1)
-        # sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         # sinr_clip /= gp.USER_QOS
-        self.user_qos[:, 0] -= sinr
+        self.user_qos[:, 0] -= sinr_clip
         self.user_qos[:, 1] -= 1
         rest = np.all(self.user_qos > 0, axis=1)
         gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
@@ -486,7 +486,7 @@ class Channel:
         sinr_clip = np.log2(sinr + 1)
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         # sinr_clip /= gp.USER_QOS
-        self.user_qos[:, 0] -= sinr
+        self.user_qos[:, 0] -= sinr_clip
         self.user_qos[:, 1] -= 1
         rest = np.all(self.user_qos > 0, axis=1)
         gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
@@ -524,9 +524,9 @@ class Channel:
 
     def decentralized_reward_exclude_central(self, sinr, action):
         sinr_clip = np.log2(sinr + 1)
-        # sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         # sinr_clip /= gp.USER_QOS
-        self.user_qos[:, 0] -= sinr
+        self.user_qos[:, 0] -= sinr_clip
         self.user_qos[:, 1] -= 1
         rest = np.all(self.user_qos > 0, axis=1)
         gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
@@ -557,16 +557,13 @@ class Channel:
         sinr_clip = np.log2(sinr + 1)
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         # sinr_clip /= gp.USER_QOS
-        self.user_qos[:, 0] -= sinr
+        self.user_qos[:, 0] -= sinr_clip
         self.user_qos[:, 1] -= 1
         rest = np.all(self.user_qos > 0, axis=1)
         gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
-        # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
-        # sinr_x = self.sinr_ap_user_noncoop()
-        # sinr_x[np.where(sinr_clip == 0)] = 0
-        # # sinr_x[sinr_x > 8] = 8
-        # sinr_x = np.log10(sinr_x / 8 + 1) * 2
-        # sinr_clip = sinr_clip - sinr_x
+
+        sinr_clip[gain] += self.user_qos[gain, 0]
+
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
         ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 1], ap_observe_relation[:, :, 0]) * 180 / np.pi - 360

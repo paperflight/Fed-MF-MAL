@@ -41,7 +41,7 @@ CS_COLOR = 'blue'
 # observation square step
 SQUARE_STEP = 2
 # TODO: Observation version 1-3: 3, 4: 4, 5: 5, 6: 5, 7: 5, 8: 4
-OBSERVATION_DIMS = 2  # each cluster has three observations: ap position, user position
+OBSERVATION_DIMS = 2  # each cluster has two observations: ap position, user position
 # TODO: when selecting observation 4 and 5, change the observation dims too
 OBSERVATION_VERSION = 1  # 1: observation v1, 2 observation v2
 # for details look into game.get_observation_vx() function

@@ -184,7 +184,7 @@ class Decentralized_Game:
         """
 
         observation = [np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool),
+                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)]),
                        np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
                                   np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)])]
 
@@ -194,6 +194,8 @@ class Decentralized_Game:
         for user_id, u_pos in enumerate(user_pos):
             observation[1][u_pos[0], u_pos[1]] += self.environment.user_qos[user_id, 0]
         observation[1] /= (gp.USER_QOS * 2)
+        observation[1][observation[1] > 1] = 1
+        # observation must bounded in 0-1
 
         self.observation = observation
         return self.observation
@@ -237,10 +239,10 @@ class Decentralized_Game:
             neighbor_ind = np.where(ap_ob[0] == 1)
             neighbor_action = hex_action_indices_map[ap_act]
             if neighbor_action is None:
-                ap_obs[ap_index][0][neighbor_ind] = -1
-                ap_obs[ap_index][0][self.one_side_length, self.one_side_length] = 1
+                self.state_buffer[ap_index][-1][0][neighbor_ind] = -1
+                self.state_buffer[ap_index][-1][0][self.one_side_length, self.one_side_length] = 1
             else:
-                ap_obs[ap_index][0][neighbor_ind] = -1
+                self.state_buffer[ap_index][-1][0][neighbor_ind] = -1
                 neighbor_enable = self.environment.coop_graph.neighbor_indices(ap_index, True)
                 neighbor_enable_non = neighbor_enable[neighbor_enable != -1]
                 neighbor_action = np.array(neighbor_action)
@@ -248,10 +250,12 @@ class Decentralized_Game:
                 neighbor_action = np.insert(neighbor_action, 0, 3)
                 matched_ind = [np.where(neighbor_enable_non == neighbor_enable[ind])[0] for ind in neighbor_action]
                 for ind in matched_ind:
-                    ap_obs[ap_index][0][neighbor_ind[0][ind], neighbor_ind[1][ind]] = \
-                        ap_actual_action[neighbor_enable_non[ind]].item(0) + 1
-                ap_obs[ap_index][0] /= 12
-        return ap_obs
+                    self.state_buffer[ap_index][-1][0][neighbor_ind[0][ind], neighbor_ind[1][ind]] = 1
+                # for ind in matched_ind:
+                #     self.state_buffer[ap_index][-1][0][neighbor_ind[0][ind], neighbor_ind[1][ind]] = \
+                #         ap_actual_action[neighbor_enable_non[ind]].item(0) + 1
+                # self.state_buffer[ap_index][-1][0] /= 12
+        return [self.state_buffer[ind][-1] for ind in range(self.environment.ap_number)]
 
     @staticmethod
     def remove_previous_action(state):

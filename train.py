@@ -244,7 +244,7 @@ else:
         for res in train_history_aps:
             for index, memerys in enumerate(res):
                 for state, _, _, _, _, done in memerys:
-                    val_mem_aps[index].append(state, None, None, None, None, done)
+                    val_mem_aps[index].append(state, 0, np.zeros(gp.ACTION_NUM), 0, done)
 
 if args.evaluate:
     for index in range(env.environment.ap_number):
@@ -268,8 +268,7 @@ else:
         for _ in range(env.environment.ap_number):
             if args.reward_clip > 0:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
-            if not reward[_] == 0:
-                mem_aps[_].append(state[_], int(action[_] - 1)/2, avail[_], reward[_], dqn[_].average_reward, done)  # Append transition to memory
+            mem_aps[_].append(state[_], int(action[_] - 1)/2, avail[_], reward[_], done)  # Append transition to memory
             # data reinforcement, not applicapable with infinite environment
             # obs = state[_]
             # act = action[_]

@@ -192,8 +192,8 @@ class Agent:
             # Double-Q probabilities p(s_t+n, argmax_a[(z, p(s_t+n, a; θonline))]; θtarget)
 
             # Compute Tz (Bellman operator T applied to z)
-            Tz = returns.unsqueeze(1) + nonterminals * (self.discount ** self.n) * self.support.unsqueeze(
-                0)  # Tz = R^n + (γ^n)z (accounting for terminal states)
+            Tz = returns.unsqueeze(1) + nonterminals * (self.discount ** self.n) * self.support.unsqueeze(0)
+            # Tz = R^n + (γ^n)z (accounting for terminal states)
             Tz = Tz.clamp(min=self.Vmin, max=self.Vmax)  # Clamp between supported values
             # Compute L2 projection of Tz onto fixed support z
             b = (Tz - self.Vmin) / self.delta_z  # b = (Tz - Vmin) / Δz

@@ -117,7 +117,7 @@ class ReplayMemory:
         return transition
 
     # Returns a valid sample from a segment
-    def _get_sample_from_segment(self, segment, i):
+    def _get_sample_from_segment(self, segment, i, avg=0):
         prob, idx, tree_idx, valid = None, None, None, False
         while not valid:
             sample = np.random.uniform(i * segment,
@@ -144,7 +144,7 @@ class ReplayMemory:
         action = torch.tensor([transition[self.history - 1].action], dtype=torch.int64, device=self.device)
         avail = torch.tensor([transition[self.history - 1].avail]).to(dtype=torch.bool).to(device=self.device)
         # Calculate truncated n-step discounted return R^n = Σ_k=0->n-1 (γ^k)R_t+k+1 (note that invalid nth next states have reward 0)
-        R = torch.stack([sum(self.discount ** n * (transition[self.history + n - 1].reward - transition[self.history + n - 1].avg_r)
+        R = torch.stack([sum(self.discount ** n * (transition[self.history + n - 1].reward - transition[self.history + n - 1].avg)
                              for n in range(self.n))]).to(device=self.device).to(dtype=torch.float32)
         # Mask for non-terminal nth next states
         nonterminal = torch.tensor([transition[self.history + self.n - 1].nonterminal], dtype=torch.float32,
@@ -152,11 +152,11 @@ class ReplayMemory:
 
         return prob, idx, tree_idx, state, action, avail, R, next_state, nonterminal
 
-    def sample(self, batch_size):
+    def sample(self, batch_size, avg=0):
         p_total = self.transitions.total()
         # Retrieve sum of all priorities (used to create a normalised probability distribution)
         segment = p_total / batch_size  # Batch size number of segments, based on sum over all probabilities
-        batch = [self._get_sample_from_segment(segment, i) for i in range(batch_size)]  # Get batch of valid samples
+        batch = [self._get_sample_from_segment(segment, i, avg) for i in range(batch_size)]  # Get batch of valid samples
         probs, idxs, tree_idxs, states, actions, avail, returns, next_states, nonterminals = zip(*batch)
         states, next_states = torch.stack(states), torch.stack(next_states)
         avail = torch.cat(avail)

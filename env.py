@@ -251,6 +251,7 @@ class Channel:
             * self.ap_distri_space
         self.dist_matrix = ssd.cdist(self.ap_position, self.user_position)
         self.dist_matrix[np.where(self.dist_matrix < 1)] += 1
+        del self.coop_graph
         self.coop_graph = Connection_Graph(self.ap_position, self.connect_threshold)
 
     def calculate_power_allocation(self):

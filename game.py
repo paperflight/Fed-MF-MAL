@@ -343,6 +343,7 @@ class Decentralized_Game:
         return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
 
     def close(self):
+        del self.environment.coop_graph
         del self.environment
         del self
         return

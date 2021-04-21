@@ -484,7 +484,7 @@ class Channel:
 
     def decentralized_reward_step(self, sinr, aa):
         sinr_clip = np.log2(sinr + 1)
-        # sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         # sinr_clip /= gp.USER_QOS
         self.user_qos[:, 0] -= sinr
         self.user_qos[:, 1] -= 1
@@ -504,7 +504,7 @@ class Channel:
                                          axis=2)
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
         ap_observe_relation = np.logical_and(ap_observe_relation_edg, ap_observe_relation)
-        ap_distribute_reward = ap_observe_relation * sinr_clip
+        ap_distribute_reward = ap_observe_relation * gain
         normalized_factor = np.sum(ap_observe_relation, axis=1)
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
@@ -518,7 +518,7 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
-        ap_distribute_reward[np.where(aa == 12)[0]] = -0.5
+        # ap_distribute_reward[np.where(aa == 12)[0]] = -0.5
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
         return ap_distribute_reward / 5
 
@@ -555,7 +555,7 @@ class Channel:
 
     def decentralized_reward_directional(self, sinr, action):
         sinr_clip = np.log2(sinr + 1)
-        # sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
         # sinr_clip /= gp.USER_QOS
         self.user_qos[:, 0] -= sinr
         self.user_qos[:, 1] -= 1
@@ -584,7 +584,8 @@ class Channel:
         ap_distribute_reward = mask * sinr_clip
         normalized_factor = np.sum(mask, axis=1)
         normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / \
+                               (gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
         # normalization
 
         # if gp.DEBUG and np.any(ap_distribute_reward[np.where(action != 12)[0]] == 0):
@@ -602,7 +603,7 @@ class Channel:
             # self.small_scale_fading = self.small_scale_fading[:, rest]
             # self.coop_decision = self.coop_decision[:, rest]
             # self.channel = self.channel[:, rest]
-        ap_distribute_reward[np.where(action == 12)[0]] = -0.25
+        ap_distribute_reward[np.where(action == 12)[0]] = 0
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
         return ap_distribute_reward / 5
 
@@ -616,8 +617,8 @@ if __name__ == "__main__":
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('random')
-        res = x.decentralized_reward_step(sinr, aa)
+        sinr, action, aa = x.test_sinr('ones')
+        res = x.decentralized_reward_directional(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
         res_avg += res
@@ -628,7 +629,7 @@ if __name__ == "__main__":
     res_avg1 = np.zeros(20)
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
-        res = x.decentralized_reward_step(sinr, aa)
+        res = x.decentralized_reward_directional(sinr, aa)
         res_avg1 += res
     res_avg1 /= 1000
     print(res_avg1)

@@ -288,7 +288,7 @@ class Decentralized_Game:
                 action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_step(self.environment.sinr_calculation(), actual_action)
+        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
@@ -331,7 +331,7 @@ class Decentralized_Game:
             action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_step(self.environment.sinr_calculation(), actual_action)
+        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)

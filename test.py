@@ -36,6 +36,7 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
     for index in range(new_game.environment.ap_number):
         c_pipe[index].send((np.array([False]), np.array([False])))
         c_pipe[index].close()
+    new_game.close()
     del new_game
 
 

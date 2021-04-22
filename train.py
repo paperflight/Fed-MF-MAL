@@ -84,12 +84,12 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='SIZE', help='
 parser.add_argument('--better-indicator', type=float, default=1.0, metavar='b',
                     help='The new model should be b times of old performance to be recorded')
 # TODO: Switch interval should not be large
-parser.add_argument('--learn-start', type=int, default=int(2000), metavar='STEPS',
+parser.add_argument('--learn-start', type=int, default=int(400), metavar='STEPS',
                     help='Number of steps before starting training')
 parser.add_argument('--evaluate', action='store_true', help='Evaluate only')
 parser.add_argument('--data-reinforce', action='store_true', help='DataReinforcement')
 # TODO: Change this after debug
-parser.add_argument('--evaluation-interval', type=int, default=2000, metavar='STEPS',
+parser.add_argument('--evaluation-interval', type=int, default=200, metavar='STEPS',
                     help='Number of training steps between evaluations')
 parser.add_argument('--evaluation-episodes', type=int, default=400, metavar='N',
                     help='Number of evaluation episodes to average over')

@@ -231,6 +231,12 @@ class Agent:
     def update_target_net(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
 
+    def soft_update_target_net(self, tau):
+        for target_param, param in zip(self.target_net.parameters(), self.online_net.parameters()):
+            target_param.data.copy_(
+                target_param.data * (1.0 - tau) + param.data * tau
+            )
+
     # Save model parameters on current device (don't move model between devices)
     def save(self, path, index=-1, name='model.pth'):
         if index == -1:

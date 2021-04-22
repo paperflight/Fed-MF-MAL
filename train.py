@@ -63,7 +63,7 @@ parser.add_argument('--action-selection', type=str, default='boltzmann', metavar
                     choices=['greedy', 'boltzmann', 'no_limit'],
                     help='Type of action selection algorithm, 1: greedy, 2: boltzmann')
 parser.add_argument('--model', type=str, default=None, metavar='PARAM', help='Pretrained model (state dict)')
-parser.add_argument('--memory-capacity', type=int, default=int(4e3), metavar='CAPACITY',
+parser.add_argument('--memory-capacity', type=int, default=int(12e3), metavar='CAPACITY',
                     help='Experience replay memory capacity')
 parser.add_argument('--replay-frequency', type=int, default=4, metavar='k', help='Frequency of sampling from memory')
 parser.add_argument('--priority-exponent', type=float, default=0.5, metavar='ω',
@@ -308,7 +308,7 @@ else:
                 # Update target network
                 if T % args.target_update == 0:
                     for index in range(env.environment.ap_number):
-                        dqn[index].update_target_net()
+                        dqn[index].soft_update_target_net(1/args.target_update)
 
                 # Checkpoint the network
                 if (args.checkpoint_interval != 0) and (T % args.checkpoint_interval == 0):

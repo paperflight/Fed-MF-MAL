@@ -338,7 +338,7 @@ class Channel:
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
-            while not ap_action[action[ap]]:
+            while not ap_action[int((action[ap]-1)/2)]:
                 # TODO: Notice here when change action size
                 new_action = np.random.randint(0, 12)
                 action[ap] = new_action
@@ -601,7 +601,7 @@ class Channel:
             # self.small_scale_fading = self.small_scale_fading[:, rest]
             # self.coop_decision = self.coop_decision[:, rest]
             # self.channel = self.channel[:, rest]
-        # ap_distribute_reward[np.where(action == 12)[0]] = 0
+        ap_distribute_reward[np.where(action == 12)[0]] = 0
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
         return ap_distribute_reward / 5
 
@@ -616,7 +616,7 @@ if __name__ == "__main__":
     res_avg = np.zeros(20)
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
-        res = x.decentralized_reward_step(sinr, aa)
+        res = x.decentralized_reward_directional(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
         res_avg += res
@@ -627,7 +627,7 @@ if __name__ == "__main__":
     res_avg1 = np.zeros(20)
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
-        res = x.decentralized_reward_step(sinr, aa)
+        res = x.decentralized_reward_directional(sinr, aa)
         res_avg1 += res
     res_avg1 /= 1000
     print(res_avg1)

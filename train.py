@@ -73,7 +73,7 @@ parser.add_argument('--priority-weight', type=float, default=0.4, metavar='β',
 parser.add_argument('--multi-step', type=int, default=3, metavar='n',
                     help='Number of steps for multi-step return')
 parser.add_argument('--discount', type=float, default=1, metavar='γ', help='Discount factor')
-parser.add_argument('--target-update', type=int, default=int(2000), metavar='τ',
+parser.add_argument('--target-update', type=int, default=int(8000), metavar='τ',
                     help='Number of steps after which to update target network')
 parser.add_argument('--reward-clip', type=int, default=5, metavar='VALUE', help='Reward clipping (0 to disable)')
 parser.add_argument('--learning-rate', type=float, default=0.0000625, metavar='η', help='Learning rate')

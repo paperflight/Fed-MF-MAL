@@ -212,14 +212,17 @@ class Agent:
                                   (pns_a * (b - l.float())).view(-1))  # m_u = m_u + p(s_t+n, a*)(b - l)
 
         loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
-        self.average_reward = self.average_reward + \
-                              self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
-                                               pns_a.detach() * self.support - log_ps_a.detach() * self.support)
-        self.average_reward = self.average_reward.detach()
         self.online_net.zero_grad()
         (weights * loss).mean().backward()  # Backpropagate importance-weighted minibatch loss
-        # clip_grad_norm_(self.online_net.parameters(), 1.0, norm_type=1)
+        clip_grad_norm_(self.online_net.parameters(), 10.0, norm_type=2)
         self.optimiser.step()
+
+        ps = self.online_net(states)  # Log probabilities log p(s_t, ·; θonline)
+        ps_a = log_ps[range(self.batch_size), actions]  # log p(s_t, a_t; θonline)
+        self.average_reward = self.average_reward + \
+                              self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
+                                                                   pns_a.detach() * self.support - ps_a.detach() * self.support)
+        self.average_reward = self.average_reward.detach()
 
         mem.update_priorities(idxs, loss.detach().cpu().numpy())  # Update priorities of sampled transitions
 

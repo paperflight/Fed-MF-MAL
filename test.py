@@ -16,13 +16,16 @@ from game import Decentralized_Game as Env
 
 
 def test_parallel(new_game, c_pipe, train_history_aps, eps):
-    new_game.reset_seed()
+    new_game.reset()
     train_examples_aps = []
     reward_sum_aps = []
     for index in range(new_game.environment.ap_number):
         train_examples_aps.append([])
 
+    done = False
     for _ in range(eps):
+        if done:
+            done = new_game.reset()
         state, action, avail, reward, done = new_game.step_p(c_pipe)  # Step
         # print(action, reward)
         reward_sum_aps.append(reward)
@@ -53,6 +56,8 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
     # Test performance over several episodes
     reward_sum, done = [], True
     for _ in range(args.evaluation_episodes):
+        if done:
+            done = env.reset()
         state, action, avail, reward, done = env.step(dqn)
 
         reward_sum.append(reward)

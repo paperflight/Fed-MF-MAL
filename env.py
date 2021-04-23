@@ -149,6 +149,7 @@ class Connection_Graph:
                 self.hand_shake_result[temp15[1]][[ap, temp15[0]]] = 2
                 # connect triangle connected aps
 
+        for ap, ap_action in enumerate(ap_actions):
             temp = np.where(self.hand_shake_result[ap] > 1)[0]
             if len(temp) == 0:
                 result_action[ap] = 12
@@ -334,11 +335,11 @@ class Channel:
         elif action_type == 'ones':
             action = np.ones(self.ap_number, dtype=int) * 9
         elif action_type == 'fixed':
-            action = np.array([1, 4, 5, 4, 12, 3, 8, 6, 12, 9, 5, 5, 3, 11, 9, 8, 12, 9, 10, 9])
+            action = np.array([12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 2, 12, 12, 0, 7, 12, 12, 12, 12])
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
-            while not ap_action[int((action[ap]-1)/2)]:
+            while not ap_action[action[ap]]:
                 # TODO: Notice here when change action size
                 new_action = np.random.randint(0, 12)
                 action[ap] = new_action
@@ -569,12 +570,13 @@ class Channel:
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
         ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 1], ap_observe_relation[:, :, 0]) * 180 / np.pi - 360
         ap_observe_angle = ((150 - (np.ones([self.ap_number, self.user_number]).T * action).T * 30) - ap_observe_angle) % 360
-        # ap_observe_angle_thre_up, ap_observe_angle_thre_do = np.ones(ap_observe_angle.shape), np.ones(ap_observe_angle.shape)
-        # ap_observe_angle_thre_up *= np.expand_dims(30 - 30 * (action % 2), axis=1)
-        # ap_observe_angle_thre_do *= np.expand_dims(90 + 30 * (action % 2), axis=1)
+        ap_observe_angle_thre_up, ap_observe_angle_thre_do = np.ones(ap_observe_angle.shape), np.ones(ap_observe_angle.shape)
+        ap_observe_angle_thre_up *= np.expand_dims(30 - 30 * (action % 2), axis=1)
+        ap_observe_angle_thre_do *= np.expand_dims(90 + 30 * (action % 2), axis=1)
         ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
                                                                                 (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_observe_angle = np.logical_and(ap_observe_angle > 0, ap_observe_angle < 120)
+        ap_observe_angle = np.logical_and(ap_observe_angle > ap_observe_angle_thre_up,
+                                          ap_observe_angle < ap_observe_angle_thre_do)
         ap_observe_angle[np.where(action == 12)[0], :] = 1
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) <
                                      int(gp.REWARD_CAL_RANGE * (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
@@ -601,9 +603,9 @@ class Channel:
             # self.small_scale_fading = self.small_scale_fading[:, rest]
             # self.coop_decision = self.coop_decision[:, rest]
             # self.channel = self.channel[:, rest]
-        ap_distribute_reward[np.where(action == 12)[0]] = 0
+        ap_distribute_reward[np.where(action == 12)[0]] = -0.1
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
-        return ap_distribute_reward / 5
+        return ap_distribute_reward
 
 
 if __name__ == "__main__":
@@ -615,7 +617,7 @@ if __name__ == "__main__":
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('random')
+        sinr, action, aa = x.test_sinr('fixed')
         res = x.decentralized_reward_directional(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())

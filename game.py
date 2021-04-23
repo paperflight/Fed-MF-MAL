@@ -60,8 +60,9 @@ class Decentralized_Game:
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
-                            ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, 'zero_forcing'],
-                            "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
+                                       ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M,
+                                        'zero_forcing'],
+                                       "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
 
         self.state_buffer = []
         self.history_buffer_length = args.history_length
@@ -84,7 +85,7 @@ class Decentralized_Game:
     def get_action_size():
         return gp.ACTION_NUM
 
-    def reset_seed(self):
+    def reset(self):
         np.random.seed(int(time.time() % 1 * 10e8))
         del self.environment
         self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
@@ -116,7 +117,8 @@ class Decentralized_Game:
 
     def get_observation_tensor(self):
         """:return List of tensor"""
-        return [torch.tensor(aps_obv, dtype=torch.float32, device=self.args.device) for aps_obv in self.get_observation()]
+        return [torch.tensor(aps_obv, dtype=torch.float32, device=self.args.device) for aps_obv in
+                self.get_observation()]
 
     @staticmethod
     def pad_with_zeros(vector, pad_width, iaxis, kwargs):
@@ -163,9 +165,9 @@ class Decentralized_Game:
         """
 
         observation = [np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool),
+                                 np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool),
                        np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool)]
+                                 np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)], dtype=bool)]
 
         ap_pos = np.floor(self.environment.ap_position / gp.SQUARE_STEP).astype(int)
         observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
@@ -184,9 +186,9 @@ class Decentralized_Game:
         """
 
         observation = [np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)]),
+                                 np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)]),
                        np.zeros([np.floor(self.board_length_l / gp.SQUARE_STEP).astype(int),
-                                  np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)])]
+                                 np.floor(self.board_length_w / gp.SQUARE_STEP).astype(int)])]
 
         ap_pos = np.floor(self.environment.ap_position / gp.SQUARE_STEP).astype(int)
         observation[0][ap_pos[:, 0], ap_pos[:, 1]] = True
@@ -210,7 +212,7 @@ class Decentralized_Game:
             new_avail[act.astype(int)] = True
             return new_avail
         act = np.where(avail[0:12] == True)[0]
-        act = (6 - act % 6) + 6 * (act // 6)
+        act = ((6 - act % 6) + 6 * (act // 6)) % 12
         new_avail = np.zeros(len(avail), dtype=bool)
         new_avail[act.astype(int)] = True
         new_avail[-1] = True
@@ -262,6 +264,12 @@ class Decentralized_Game:
         state[state != 0] = 1
         return state
 
+    def end_game(self):
+        if gp.ONE_EPISODE_RUN <= 0:
+            return False
+        if self.environment.time >= gp.ONE_EPISODE_RUN:
+            return True
+
     def step(self, accesspoint=None, epsilon=0):
         """
             :parameter accesspoint: the models of access points
@@ -303,7 +311,8 @@ class Decentralized_Game:
             #                           self.environment.coop_graph.hand_shake_result,
             #                           self.environment.user_position)
 
-        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action, avil_action, \
+               [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def step_p(self, accesspoint=None):
         """
@@ -340,7 +349,8 @@ class Decentralized_Game:
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
-        return ap_state, action, avil_action, [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], False
+        return ap_state, action, avil_action, \
+               [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def close(self):
         del self.environment.coop_graph

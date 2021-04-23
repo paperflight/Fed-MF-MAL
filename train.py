@@ -25,7 +25,7 @@ import torch.multiprocessing
 # TODO: When running in server, uncomment this line if needed
 import copy as cp
 
-from agent import Agent
+from rainbow.agent import Agent
 from game import Decentralized_Game as Env
 from memory import ReplayMemory
 from test import test, test_p
@@ -170,11 +170,13 @@ def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode)
     train_examples_aps = []
     for _ in range(env.environment.ap_number):
         train_examples_aps.append([])
-    eps = 0
+    eps, done = 0, True
     while eps < episode:
-        state, action, avail, reward, done_pp = new_game.step()  # Step
+        if done:
+            done = new_game.reset()
+        state, action, avail, reward, done = new_game.step()  # Step
         for index_p, ele_p in enumerate(state):
-            train_examples_aps[index_p].append((ele_p, None, None, None, None, done_pp))
+            train_examples_aps[index_p].append((state, 0, np.zeros(gp.ACTION_NUM), 0, done))
         eps += 1
     train_history_aps_parallel.append(train_examples_aps)
     
@@ -216,11 +218,13 @@ val_mem_aps = []
 for _ in range(env.environment.ap_number):
     val_mem_aps.append(ReplayMemory(args, args.evaluation_size, True, env.remove_previous_action))
 if not gp.PARALLEL_EXICUSION:
-    T, done = 0, False
+    T, done = 0, True
     while T < args.evaluation_size:
+        if done:
+            done = env.reset()
         state, action, avail, reward, done = env.step()
         for index, ele in enumerate(state):
-            val_mem_aps[index].append(ele, None, None, None, None, done)
+            val_mem_aps[index].append(state, 0, np.zeros(gp.ACTION_NUM), 0, done)
         T += 1
 else:
     num_cores = min(multiprocessing.cpu_count(), gp.ALLOCATED_CORES) - 1
@@ -243,8 +247,8 @@ else:
 
         for res in train_history_aps:
             for index, memerys in enumerate(res):
-                for state, _, _, _, _, done in memerys:
-                    val_mem_aps[index].append(state, 0, np.zeros(gp.ACTION_NUM), 0, done)
+                for state, _, _, _, done in memerys:
+                    val_mem_aps[index].append(state[index], _, _, _, done)
 
 if args.evaluate:
     for index in range(env.environment.ap_number):
@@ -254,8 +258,29 @@ if args.evaluate:
         print('Avg. reward for ap' + str(index) + ': ' + str(avg_reward[index]) + ' | Avg. Q: ' + str(avg_Q[index]))
 else:
     # Training loop
-    T, aps_state, epsilon = 0, None, args.epsilon_max
+    T, aps_state, epsilon, done = 0, None, args.epsilon_max, True
+    reinforce_ap = []
+    for i in range(env.environment.ap_number):
+        temp = []
+        for j in range(3):
+            temp.append([])
+        reinforce_ap.append(temp)
+
     for T in trange(1, args.T_max + 1):
+        if done and T > 2:
+            done = env.reset()
+            if T > 1 and args.data_reinforce:
+                for index, ap_rein in enumerate(reinforce_ap):
+                    for ap_pair in ap_rein:
+                        for ap_ele in ap_pair:
+                            mem_aps[index].append(ap_ele[0], ap_ele[1], ap_ele[2], ap_ele[3], ap_ele[4])
+            reinforce_ap = []
+            for i in range(env.environment.ap_number):
+                temp = []
+                for j in range(3):
+                    temp.append([])
+                reinforce_ap.append(temp)
+
         # training loop
         if T % args.replay_frequency == 0:
             for _ in range(env.environment.ap_number):
@@ -268,19 +293,19 @@ else:
         for _ in range(env.environment.ap_number):
             if args.reward_clip > 0:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
-            mem_aps[_].append(state[_], int(action[_] - 1)/2, avail[_], reward[_], done)  # Append transition to memory
+            mem_aps[_].append(state[_], action[_], avail[_], reward[_], done)  # Append transition to memory
             # data reinforcement, not applicapable with infinite environment
-            # obs = state[_]
-            # act = action[_]
-            # obs = torch.rot90(obs, 2, [1, 2])
-            # if act != 12 and not reward[_] == 0:
-            #     act = (-6 + action[_] + 12) % 12
-            #     mem_aps[_].append(obs, (act - 1)/2, env.rot_avail(avail[_]), reward[_], done)
-            #     mem_aps[_].append(torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6) -1)/2,
-            #                       env.flip_avail(env.rot_avail(avail[_])), reward[_], done)
-            #     mem_aps[_].append(torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6) -1)/2,
-            #                       env.flip_avail(avail[_]), reward[_], done)
-            #     # append rotated observation for data reinforcement
+            obs = state[_]
+            act = action[_]
+            obs = torch.rot90(obs, 2, [1, 2])
+            if act != 12 and not reward[_] == 0:
+                act = (-6 + action[_] + 12) % 12
+                reinforce_ap[_][0].append((obs, act, env.rot_avail(avail[_]), reward[_], done))
+                reinforce_ap[_][1].append((torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6)) % 12,
+                                            env.flip_avail(env.rot_avail(avail[_])), reward[_], done))
+                reinforce_ap[_][2].append((torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6)) % 12,
+                                            env.flip_avail(avail[_]), reward[_], done))
+                # append rotated observation for data reinforcement
 
         if T >= args.learn_start:
             # tracker.print_diff()
@@ -300,20 +325,20 @@ else:
                 for models in dqn:
                     models.set_state_dict(global_weight)
 
-                # If memory path provided, save it
+            # If memory path provided, save it
+            for index in range(env.environment.ap_number):
+                if args.memory is not None:
+                    save_memory(mem_aps[index], args.memory, args.disable_bzip_memory, index)
+
+            # Update target network
+            # if T % args.target_update == 0:  # uncomment for hard update
+            for index in range(env.environment.ap_number):
+                dqn[index].soft_update_target_net(1/args.target_update)
+
+            # Checkpoint the network
+            if (args.checkpoint_interval != 0) and (T % args.checkpoint_interval == 0):
                 for index in range(env.environment.ap_number):
-                    if args.memory is not None:
-                        save_memory(mem_aps[index], args.memory, args.disable_bzip_memory, index)
-
-                # Update target network
-                if T % args.target_update == 0:
-                    for index in range(env.environment.ap_number):
-                        dqn[index].soft_update_target_net(1/args.target_update)
-
-                # Checkpoint the network
-                if (args.checkpoint_interval != 0) and (T % args.checkpoint_interval == 0):
-                    for index in range(env.environment.ap_number):
-                        dqn[index].save(results_dir, 'checkpoint' + str(index) + '.pth')
+                    dqn[index].save(results_dir, 'checkpoint' + str(index) + '.pth')
 
         if T % args.evaluation_interval == 0 and T > args.learn_start:
             for index in range(env.environment.ap_number):

@@ -598,7 +598,7 @@ class Channel:
             # self.channel = self.channel[:, rest]
         ap_distribute_reward[np.where(action == 12)[0]] = -0.1
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
-        return ap_distribute_reward
+        return ap_distribute_reward * 2
 
     def decentralized_reward_coop_only(self, sinr, aa):
         coop_num = self.coop_decision
@@ -614,9 +614,9 @@ if __name__ == "__main__":
     res_avg = np.zeros(20)
     mean_sinr = 0
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('isolate')
+        sinr, action, aa = x.test_sinr('random')
         sinr = np.log2(sinr + 1)
-        res = x.decentralized_reward_exclude_central(sinr, aa)
+        res = x.decentralized_reward_directional(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
         res_avg += res
@@ -630,7 +630,7 @@ if __name__ == "__main__":
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
         sinr = np.log2(sinr + 1)
-        res = x.decentralized_reward_exclude_central(sinr, aa)
+        res = x.decentralized_reward_directional(sinr, aa)
         mean_sinr += np.mean(sinr)
         res_avg1 += res
     res_avg1 /= 1000

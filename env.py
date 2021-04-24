@@ -266,11 +266,11 @@ class Channel:
                                                self.ap_central_freq / gp.SPEED_OF_LIGHT,
                                                self.large_scale_fading_parameter)
         elif self.large_scale_fading_type == "3GPP-InH-LOS":
-            self.large_scale_fading = np.power(-(32.4 + 17.3 * np.log10(self.dist_matrix) + 20 *
-                                                 np.log10(self.ap_central_freq) + np.random.normal(3)) / 10, 10)
+            self.large_scale_fading = 1/np.power((32.4 + 17.3 * np.log10(self.dist_matrix) + 20 *
+                                                  np.log10(self.ap_central_freq) + np.random.normal(3)) / 10, 10)
         elif self.large_scale_fading_type == "3GPP-UMa-LOS":
-            self.large_scale_fading = np.power(-(28 + 22 * np.log10(self.dist_matrix) + 20 *
-                                                 np.log10(self.ap_central_freq) + np.random.normal(4)) / 10, 10)
+            self.large_scale_fading = 1/np.power((28 + 22 * np.log10(self.dist_matrix) + 20 *
+                                                  np.log10(self.ap_central_freq) + np.random.normal(4)) / 10, 10)
         # Study on channel model for frequencies from 0.5 to 100 GHz
 
     def calculate_small_scale_fading(self):
@@ -376,6 +376,7 @@ class Channel:
         precoder = self.precoder_ap_user()
         precoder[precoder == 0] = 1
         self.channel = self.channel * np.square(np.absolute(precoder * self.small_scale_fading))
+        self.channel[self.channel > 1000] = 1000  # do some crop
         signal = self.channel * signal_mask
         interference = self.channel * interference_mask
         sinr = np.sum(signal, axis=0) / (-np.sum(interference, axis=0) + gp.NOISE_THETA)
@@ -399,15 +400,7 @@ class Channel:
         return self.sinr_ap_user()
 
     def test_sinr(self, action_type):
-        self.number_init()
-        self.location_init()
-        self.calculate_power_allocation()
-        self.calculate_large_scale_fading()
-        self.calculate_small_scale_fading()
-        self.time += 1
-        self.channel = np.power(self.power_gain / 10, 10) * self.large_scale_fading
-        self.calculate_association()
-        avail = self.coop_graph.calculate_action_mask()
+        avail = self.established()
         action, actual_action = self.random_action(action_type, avail)
         self.map_association_with_coop_decision()
         sinr = self.sinr_ap_user()
@@ -607,30 +600,39 @@ class Channel:
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
         return ap_distribute_reward
 
+    def decentralized_reward_coop_only(self, sinr, aa):
+        coop_num = self.coop_decision
+
 
 if __name__ == "__main__":
-    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 100], ["Hex", 20, 13], [28, 15, 5e8], [28, 15, 5e8],
-                ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
+    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 100], ["Hex", 20, 13], [28, 15, 5], [28, 15, 5],
+                ["3GPP-InH-LOS", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
                 13 * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
+    mean_sinr = 0
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('fixed')
-        res = x.decentralized_reward_directional(sinr, aa)
+        sinr, action, aa = x.test_sinr('isolate')
+        sinr = np.log2(sinr + 1)
+        res = x.decentralized_reward_exclude_central(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
         res_avg += res
+        mean_sinr += np.mean(sinr)
         # if _% 100 == 0:
         #     tracker.print_diff()
     res_avg /= 1000
-    print(res_avg)
+    print(res_avg, mean_sinr)
     res_avg1 = np.zeros(20)
+    mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
-        res = x.decentralized_reward_directional(sinr, aa)
+        sinr = np.log2(sinr + 1)
+        res = x.decentralized_reward_exclude_central(sinr, aa)
+        mean_sinr += np.mean(sinr)
         res_avg1 += res
     res_avg1 /= 1000
-    print(res_avg1)
+    print(res_avg1, mean_sinr)
     print(res_avg - res_avg1)

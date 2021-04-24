@@ -598,10 +598,7 @@ class Channel:
             # self.channel = self.channel[:, rest]
         ap_distribute_reward[np.where(action == 12)[0]] = -0.1
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
-        return ap_distribute_reward * 2
-
-    def decentralized_reward_coop_only(self, sinr, aa):
-        coop_num = self.coop_decision
+        return ap_distribute_reward
 
 
 if __name__ == "__main__":

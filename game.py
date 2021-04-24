@@ -106,6 +106,7 @@ class Decentralized_Game:
             for _ in range(self.history_buffer_length):
                 self.state_buffer[index].append(torch.zeros(gp.OBSERVATION_DIMS, int(self.one_side_length * 2 + 1),
                                                             int(self.one_side_length * 2 + 1), device=self.args.device))
+        return False
 
     def plot_grid_map(self, position_list):
         grid_map = np.zeros([int(self.board_length_l / gp.SQUARE_STEP), int(self.board_length_w / gp.SQUARE_STEP)],

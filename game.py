@@ -270,6 +270,7 @@ class Decentralized_Game:
             return False
         if self.environment.time >= gp.ONE_EPISODE_RUN:
             return True
+        return False
 
     def step(self, accesspoint=None, epsilon=0):
         """

@@ -195,22 +195,21 @@ class Agent:
             m = states.new_zeros(self.batch_size, self.atoms)
             offset = torch.linspace(0, ((self.batch_size - 1) * self.atoms), self.batch_size).unsqueeze(1).expand(
                 self.batch_size, self.atoms).to(actions)
-            m.view(-1).index_add_(0, (l + offset).view(-1),
-                                  (pns_a * (u.float() - b)).view(-1))  # m_l = m_l + p(s_t+n, a*)(u - b)
-            m.view(-1).index_add_(0, (u + offset).view(-1),
-                                  (pns_a * (b - l.float())).view(-1))  # m_u = m_u + p(s_t+n, a*)(b - l)
+            m.view(-1).index_add_(0, (l + offset).view(-1), (pns_a * (u.float() - b)).view(-1))
+            # m_l = m_l + p(s_t+n, a*)(u - b)
+            m.view(-1).index_add_(0, (u + offset).view(-1), (pns_a * (b - l.float())).view(-1))
+            # m_u = m_u + p(s_t+n, a*)(b - l)
+
+            # update the average reward
+            ps = self.online_net(states)
+            ps_a = ps[range(self.batch_size), actions]
+            self.average_reward = self.average_reward + \
+                                  self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
+                                                                       torch.sum(pns_a * self.support, dim=1) -
+                                                                       torch.sum(ps_a * self.support, dim=1))
 
         loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
         self.online_net.zero_grad()
-
-        # update the average reward
-        ps = self.online_net(states)
-        ps_a = ps[range(self.batch_size), actions] 
-        self.average_reward = self.average_reward + \
-                              self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
-                                                                   pns_a.detach() * self.support - ps_a.detach() * self.support)
-        self.average_reward = self.average_reward.detach()
-
         (weights * loss).mean().backward()  # Backpropagate importance-weighted minibatch loss
         clip_grad_norm_(self.online_net.parameters(), 10.0, norm_type=2)
         self.optimiser.step()

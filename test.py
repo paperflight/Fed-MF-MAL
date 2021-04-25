@@ -21,7 +21,7 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
     for index in range(new_game.environment.ap_number):
         train_examples_aps.append([])
 
-    done = True
+    done = False
     for _ in range(eps):
         if done:
             done = new_game.reset()
@@ -53,14 +53,13 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
         T_Qs_aps.append([])
 
     # Test performance over several episodes
-    reward_sum, done = [], True
+    reward_sum, done = [], False
     for _ in range(args.evaluation_episodes):
         if done:
             done = env.reset()
         state, action, avail, reward, done = env.step(dqn)
 
         reward_sum.append(reward)
-    env.close()
 
     # reward_sum = np.mean(reward_sum, axis=0)
     # print(reward_sum)
@@ -112,6 +111,7 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
             _plot_line(metrics_aps[_]['steps'], metrics_aps[_]['rewards'], 'Reward' + str(_), path=results_dir)
             _plot_line(metrics_aps[_]['steps'], metrics_aps[_]['Qs'], 'Q' + str(_), path=results_dir)
 
+    env.close()
     # Return average reward and Q-value
     return (avg_reward_aps, avg_Q_aps, better_aps)
 

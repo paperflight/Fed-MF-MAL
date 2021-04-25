@@ -128,7 +128,6 @@ class ReplayMemory:
         self.transitions.append((self.t, state_clip, action, avail, reward, not terminal),
                                 self.transitions.max)  # Store new transition with maximum priority
         self.t = 0 if terminal else self.t + 1  # Start new episodes with t = 0
-
         # Returns the transitions with blank states where appropriate
 
     def _get_transitions(self, idxs):

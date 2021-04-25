@@ -49,11 +49,11 @@ parser.add_argument('--history-length', type=int, default=2, metavar='T',
 parser.add_argument('--architecture', type=str, default='canonical_61obv_16ap', metavar='ARCH', help='Network architecture')
 # TODO: if select resnet8, obs v8 and dims 4 should be set in gp
 parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help='Network hidden size')
-parser.add_argument('--noisy-std', type=float, default=0.5, metavar='σ',
+parser.add_argument('--noisy-std', type=float, default=0.3, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
 parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=-0.5, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=0.5, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--V-min', type=float, default=-1, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=1, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')
@@ -70,7 +70,7 @@ parser.add_argument('--priority-exponent', type=float, default=0.5, metavar='ω'
                     help='Prioritised experience replay exponent (originally denoted α)')
 parser.add_argument('--priority-weight', type=float, default=0.4, metavar='β',
                     help='Initial prioritised experience replay importance sampling weight')
-parser.add_argument('--multi-step', type=int, default=3, metavar='n',
+parser.add_argument('--multi-step', type=int, default=1, metavar='n',
                     help='Number of steps for multi-step return')
 parser.add_argument('--discount', type=float, default=1, metavar='γ', help='Discount factor')
 parser.add_argument('--target-update', type=int, default=int(8000), metavar='τ',
@@ -224,7 +224,7 @@ if not gp.PARALLEL_EXICUSION:
             done = env.reset()
         state, action, avail, reward, done = env.step()
         for index, ele in enumerate(state):
-            val_mem_aps[index].append(state, 0, np.zeros(gp.ACTION_NUM), 0, done)
+            val_mem_aps[index].append(ele, 0, np.zeros(gp.ACTION_NUM), 0, done)
         T += 1
 else:
     num_cores = min(multiprocessing.cpu_count(), gp.ALLOCATED_CORES) - 1
@@ -294,18 +294,19 @@ else:
             if args.reward_clip > 0:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
             mem_aps[_].append(state[_], action[_], avail[_], reward[_], done)  # Append transition to memory
-            # data reinforcement, not applicapable with infinite environment
-            obs = state[_]
-            act = action[_]
-            obs = torch.rot90(obs, 2, [1, 2])
-            if act != 12 and not reward[_] == 0:
-                act = (-6 + action[_] + 12) % 12
-                reinforce_ap[_][0].append((obs, act, env.rot_avail(avail[_]), reward[_], done))
-                reinforce_ap[_][1].append((torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6)) % 12,
-                                            env.flip_avail(env.rot_avail(avail[_])), reward[_], done))
-                reinforce_ap[_][2].append((torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6)) % 12,
-                                            env.flip_avail(avail[_]), reward[_], done))
-                # append rotated observation for data reinforcement
+            if args.data_reinforce:
+                # data reinforcement, not applicapable with infinite environment
+                obs = state[_]
+                act = action[_]
+                obs = torch.rot90(obs, 2, [1, 2])
+                if act != 12 and not reward[_] == 0:
+                    act = (-6 + action[_] + 12) % 12
+                    reinforce_ap[_][0].append((obs, act, env.rot_avail(avail[_]), reward[_], done))
+                    reinforce_ap[_][1].append((torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6)) % 12,
+                                                env.flip_avail(env.rot_avail(avail[_])), reward[_], done))
+                    reinforce_ap[_][2].append((torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6)) % 12,
+                                                env.flip_avail(avail[_]), reward[_], done))
+                    # append rotated observation for data reinforcement
 
         if T >= args.learn_start:
             # tracker.print_diff()

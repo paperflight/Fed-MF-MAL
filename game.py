@@ -93,7 +93,7 @@ class Decentralized_Game:
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
-                                       ["alpha-exponential", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M,
+                                       ["3GPP-InH-LOS", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M,
                                         'zero_forcing'],
                                        "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
         self.state_buffer = []
@@ -288,7 +288,7 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action, _ = self.environment.random_action('double', avil_action)
+            action = self.environment.random_action('double', avil_action)
             action_re = action
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
@@ -332,7 +332,7 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action, _ = self.environment.random_action('double', avil_action)
+            action = self.environment.random_action('double', avil_action)
             action_re = action
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]

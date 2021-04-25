@@ -266,11 +266,11 @@ class Channel:
                                                self.ap_central_freq / gp.SPEED_OF_LIGHT,
                                                self.large_scale_fading_parameter)
         elif self.large_scale_fading_type == "3GPP-InH-LOS":
-            self.large_scale_fading = 1/np.power((32.4 + 17.3 * np.log10(self.dist_matrix) + 20 *
-                                                  np.log10(self.ap_central_freq) + np.random.normal(3)) / 10, 10)
+            self.large_scale_fading = np.power(10, -(32.4 + 17.3 * np.log10(self.dist_matrix) + 20 *
+                                                     np.log10(self.ap_central_freq) + np.random.normal(3)) / 10)
         elif self.large_scale_fading_type == "3GPP-UMa-LOS":
-            self.large_scale_fading = 1/np.power((28 + 22 * np.log10(self.dist_matrix) + 20 *
-                                                  np.log10(self.ap_central_freq) + np.random.normal(4)) / 10, 10)
+            self.large_scale_fading = np.power(10, -(28 + 22 * np.log10(self.dist_matrix) + 20 *
+                                                     np.log10(self.ap_central_freq) + np.random.normal(4)) / 10)
         # Study on channel model for frequencies from 0.5 to 100 GHz
 
     def calculate_small_scale_fading(self):
@@ -343,9 +343,7 @@ class Channel:
                 # TODO: Notice here when change action size
                 new_action = np.random.randint(0, 12)
                 action[ap] = new_action
-        actual_action = self.coop_graph.hand_shake(action)
-        self.coop_decision = self.coop_graph.hand_shake_result
-        return action, actual_action
+        return action
 
     def set_action(self, ap_action):
         if gp.DEBUG and len(ap_action) != self.ap_number:
@@ -401,9 +399,9 @@ class Channel:
 
     def test_sinr(self, action_type):
         avail = self.established()
-        action, actual_action = self.random_action(action_type, avail)
-        self.map_association_with_coop_decision()
-        sinr = self.sinr_ap_user()
+        action = self.random_action(action_type, avail)
+        actual_action = self.set_action(action)
+        sinr = self.sinr_calculation()
         if gp.LOG_LEVEL >= 2:
             associ_position = self.ap_position[np.argmax(self.association_result, axis=0)]
             myplt.table_print_color(np.stack((sinr,
@@ -602,16 +600,24 @@ class Channel:
 
 
 if __name__ == "__main__":
-    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD], ["PPP", 100], ["Hex", 20, 13], [28, 15, 5], [28, 15, 5],
-                ["3GPP-InH-LOS", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
-                13 * 2 * np.sqrt(3) + 5)
+    x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
+                                       ["PPP", gp.DENSE_OF_USERS],
+                                       ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
+                                       [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
+                                       [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
+                                       ["3GPP-InH-LOS", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M,
+                                        'zero_forcing'],
+                                       "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     mean_sinr = 0
-    for _ in range(1000):
-        sinr, action, aa = x.test_sinr('random')
+    for _ in range(200):
+        avail = x.established()
+        aa = x.random_action('random', avail)
+        aa = x.set_action(aa)
+        sinr = x.sinr_calculation()
         res = x.decentralized_reward_directional(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
@@ -619,7 +625,7 @@ if __name__ == "__main__":
         mean_sinr += np.mean(sinr)
         # if _% 100 == 0:
         #     tracker.print_diff()
-    res_avg /= 1000
+    res_avg /= 200
     print(res_avg, mean_sinr)
     res_avg1 = np.zeros(20)
     mean_sinr = 0

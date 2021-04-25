@@ -21,7 +21,7 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
     for index in range(new_game.environment.ap_number):
         train_examples_aps.append([])
 
-    done = False
+    done = gp.ONE_EPISODE_RUN > 0
     for _ in range(eps):
         if done:
             done = new_game.reset()
@@ -53,7 +53,7 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
         T_Qs_aps.append([])
 
     # Test performance over several episodes
-    reward_sum, done = [], False
+    reward_sum, done = [], gp.ONE_EPISODE_RUN > 0
     for _ in range(args.evaluation_episodes):
         if done:
             done = env.reset()

@@ -335,7 +335,7 @@ class Channel:
         elif action_type == 'ones':
             action = np.ones(self.ap_number, dtype=int) * 9
         elif action_type == 'fixed':
-            action = np.array([12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 2, 12, 12, 0, 7, 12, 12, 12, 12])
+            action = np.array([1, 5, 1, 5, 9, 3, 9, 3, 11, 7, 11, 7, 1, 5, 1, 5, 9, 3, 9, 3])
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
@@ -612,7 +612,6 @@ if __name__ == "__main__":
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
-        sinr = np.log2(sinr + 1)
         res = x.decentralized_reward_directional(sinr, aa)
         # x.random_action('updown', x.coop_graph.calculate_action_mask())
         # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
@@ -625,8 +624,7 @@ if __name__ == "__main__":
     res_avg1 = np.zeros(20)
     mean_sinr = 0
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('updown')
-        sinr = np.log2(sinr + 1)
+        sinr, action, aa = x.test_sinr('fixed')
         res = x.decentralized_reward_directional(sinr, aa)
         mean_sinr += np.mean(sinr)
         res_avg1 += res

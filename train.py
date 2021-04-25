@@ -258,7 +258,7 @@ if args.evaluate:
         print('Avg. reward for ap' + str(index) + ': ' + str(avg_reward[index]) + ' | Avg. Q: ' + str(avg_Q[index]))
 else:
     # Training loop
-    T, aps_state, epsilon, done = 0, None, args.epsilon_max, True
+    T, aps_state, epsilon, done = 0, None, args.epsilon_max, env.reset()
     reinforce_ap = []
     for i in range(env.environment.ap_number):
         temp = []
@@ -341,7 +341,7 @@ else:
                 for index in range(env.environment.ap_number):
                     dqn[index].save(results_dir, 'checkpoint' + str(index) + '.pth')
 
-        if T % args.evaluation_interval == 0 and T > args.learn_start:
+        if T % args.evaluation_interval == 0 and T >= args.learn_start:
             for index in range(env.environment.ap_number):
                 dqn[index].eval()  # Set DQN (online network) to evaluation mode
 

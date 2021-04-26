@@ -325,24 +325,28 @@ class Channel:
         if not gp.DEBUG:
             raise TypeError("Function only called in Debug Mode")
         if action_type == 'random':
-            action = np.random.randint(12, size=self.ap_number)
+            action = np.random.randint(12, size=self.ap_number, dtype=int)
         elif action_type == 'isolate':
             action = np.ones(self.ap_number, dtype=int) * 12
         elif action_type == 'updown':
             action = -np.power(-1, np.arange(self.ap_number, dtype=int)) * 3 + 3
         elif action_type == 'double':
-            action = np.random.randint(6, size=self.ap_number) * 2 + 1
+            action = np.random.randint(6, size=self.ap_number, dtype=int) * 2 + 1
         elif action_type == 'ones':
             action = np.ones(self.ap_number, dtype=int) * 9
         elif action_type == 'fixed':
-            action = np.array([1, 5, 1, 5, 9, 3, 9, 3, 11, 7, 11, 7, 1, 5, 1, 5, 9, 3, 9, 3])
+            action = np.array([1, 5, 1, 5, 9, 3, 9, 3, 11, 7, 11, 7, 1, 5, 1, 5, 9, 3, 9, 3], dtype=int)
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
-            while not ap_action[action[ap]]:
-                # TODO: Notice here when change action size
-                new_action = np.random.randint(0, 12)
-                action[ap] = new_action
+            if gp.ACTION_NUM == 6:
+                while not ap_action[int((action[ap]-1)/2)]:
+                    new_action = np.random.randint(0, 12)
+                    action[ap] = new_action
+            else:
+                while not ap_action[action[ap]]:
+                    new_action = np.random.randint(0, 12)
+                    action[ap] = new_action
         return action
 
     def set_action(self, ap_action):
@@ -613,25 +617,22 @@ if __name__ == "__main__":
     #             13 * 2 * np.sqrt(3) + 5
     res_avg = np.zeros(20)
     mean_sinr = 0
-    for _ in range(200):
-        avail = x.established()
-        aa = x.random_action('random', avail)
-        aa = x.set_action(aa)
-        sinr = x.sinr_calculation()
+    for _ in range(1000):
+        sinr, action, aa = x.test_sinr('random')
         res = x.decentralized_reward_directional(sinr, aa)
-        # x.random_action('updown', x.coop_graph.calculate_action_mask())
-        # res1 = x.decentralized_reward_exclude_central(x.sinr_calculation())
+        sinr = np.log2(sinr + 1)
         res_avg += res
         mean_sinr += np.mean(sinr)
         # if _% 100 == 0:
         #     tracker.print_diff()
-    res_avg /= 200
+    res_avg /= 1000
     print(res_avg, mean_sinr)
     res_avg1 = np.zeros(20)
     mean_sinr = 0
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('fixed')
+        sinr, action, aa = x.test_sinr('updown')
         res = x.decentralized_reward_directional(sinr, aa)
+        sinr = np.log2(sinr + 1)
         mean_sinr += np.mean(sinr)
         res_avg1 += res
     res_avg1 /= 1000

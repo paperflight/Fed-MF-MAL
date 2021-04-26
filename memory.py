@@ -121,6 +121,8 @@ class ReplayMemory:
 
     # Adds state and action at time t, reward and terminal at time t + 1
     def append(self, state, action, avail, reward, terminal):
+        if gp.ACTION_NUM == 6:
+            action = int((action - 1) / 2)
         state_clip = torch.clone(state)
         state_clip[0] = (state_clip[0] + 1) / 2
         state_clip = state_clip.mul(scale_factor).to(dtype=torch.uint8, device=torch.device('cpu'))

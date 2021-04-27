@@ -153,30 +153,26 @@ class Agent:
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, avails, returns, next_states, nonterminals, weights = mem.sample(self.batch_size, self.average_reward)
-
-        # Prepare for the target q batch
-        next_q_values = self.target_net(next_states, False, self.target_net(next_states))
-        target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
-        target_q_batch.detach()
-
-        # Critic update
-        self.online_net.zero_grad()
-
-        q_batch = self.online_net(states, False, self.one_hot(actions))
-
-        # value_loss = self.mseloss(q_batch, target_q_batch)
-        value_loss = self.mseloss(q_batch, target_q_batch)
-        value_loss.backward()
-        self.optimiser.step()
+        idxs, states, actions, _, _, avails, returns, next_states, nonterminals, weights = \
+            mem.sample(self.batch_size, self.average_reward)
 
         # Actor update
-        self.online_net.zero_grad()
-
         policy_loss = -self.online_net(states, False, self.online_net(states))
-
         policy_loss = policy_loss.mean()
+
+        # Prepare for the target q batch
+        with torch.no_grad():
+            next_q_values = self.target_net(next_states, False, self.target_net(next_states))
+            target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
+
+        q_batch = self.online_net(states, False, self.one_hot(actions))
+        # value_loss = self.mseloss(q_batch, target_q_batch)
+        value_loss = self.mseloss(q_batch, target_q_batch)
+
+        self.online_net.zero_grad()
         policy_loss.backward()
+        self.optimiser.step()
+        value_loss.backward()
         self.optimiser.step()
 
         # update the average reward

@@ -154,7 +154,8 @@ class Agent:
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, avails, returns, next_states, nonterminals, weights = mem.sample(self.batch_size, self.average_reward)
+        idxs, states, actions, _, _, avails, returns, next_states, nonterminals, weights = \
+            mem.sample(self.batch_size, self.average_reward)
 
         # Calculate current state probabilities (online network noise already sampled)
         log_ps = self.online_net(states, log=True)  # Log probabilities log p(s_t, ·; θonline)

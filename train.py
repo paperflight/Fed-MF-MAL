@@ -43,7 +43,8 @@ parser.add_argument('--T-max', type=int, default=int(50e6), metavar='STEPS',
 parser.add_argument('--max-episode-length', type=int, default=int(108e3), metavar='LENGTH',
                     help='Max episode length in game frames (0 to disable)')
 # TODO: Note that the change of UAV numbers should also change the history-length variable
-parser.add_argument('--previous-action-observable', action='store_true', help='Observe previous action? (AP)')
+parser.add_argument('--previous-action-observable', action='store_false', help='Observe previous action? (AP)')
+parser.add_argument('--current-action-observable', action='store_true', help='Observe previous action? (AP)')
 parser.add_argument('--history-length', type=int, default=2, metavar='T',
                     help='Total number of history state')
 parser.add_argument('--architecture', type=str, default='canonical_61obv_16ap', metavar='ARCH', help='Network architecture')
@@ -84,12 +85,12 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='SIZE', help='
 parser.add_argument('--better-indicator', type=float, default=1.0, metavar='b',
                     help='The new model should be b times of old performance to be recorded')
 # TODO: Switch interval should not be large
-parser.add_argument('--learn-start', type=int, default=int(2000), metavar='STEPS',
+parser.add_argument('--learn-start', type=int, default=int(400), metavar='STEPS',
                     help='Number of steps before starting training')
 parser.add_argument('--evaluate', action='store_true', help='Evaluate only')
 parser.add_argument('--data-reinforce', action='store_true', help='DataReinforcement')
 # TODO: Change this after debug
-parser.add_argument('--evaluation-interval', type=int, default=2000, metavar='STEPS',
+parser.add_argument('--evaluation-interval', type=int, default=200, metavar='STEPS',
                     help='Number of training steps between evaluations')
 parser.add_argument('--evaluation-episodes', type=int, default=400, metavar='N',
                     help='Number of evaluation episodes to average over')
@@ -176,7 +177,8 @@ def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode)
             done = new_game.reset()
         state, action, avail, reward, done = new_game.step()  # Step
         for index_p, ele_p in enumerate(state):
-            train_examples_aps[index_p].append((state, 0, np.zeros(gp.ACTION_NUM), 0, done))
+            train_examples_aps[index_p].append((ele_p, 0, np.zeros(gp.ACTION_NUM), np.zeros(7),
+                                                np.zeros(gp.NUM_OF_ACCESSPOINT), 0, done))
         eps += 1
     train_history_aps_parallel.append(train_examples_aps)
     
@@ -209,14 +211,14 @@ if args.model is not None and not args.evaluate:
 else:
     mem_aps = []
     for _ in range(env.environment.ap_number):
-        mem_aps.append(ReplayMemory(args, args.memory_capacity, True, env.remove_previous_action))
+        mem_aps.append(ReplayMemory(args, args.memory_capacity, env.remove_previous_action))
 
 priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
 
 # Construct validation memory
 val_mem_aps = []
 for _ in range(env.environment.ap_number):
-    val_mem_aps.append(ReplayMemory(args, args.evaluation_size, True, env.remove_previous_action))
+    val_mem_aps.append(ReplayMemory(args, args.evaluation_size, env.remove_previous_action))
 if not gp.PARALLEL_EXICUSION:
     T, done = 0, True
     while T < args.evaluation_size:
@@ -224,7 +226,8 @@ if not gp.PARALLEL_EXICUSION:
             done = env.reset()
         state, action, avail, reward, done = env.step()
         for index, ele in enumerate(state):
-            val_mem_aps[index].append(ele, 0, np.zeros(gp.ACTION_NUM), 0, done)
+            val_mem_aps[index].append(ele, 0, np.zeros(gp.ACTION_NUM), np.zeros(7),
+                                      np.zeros(gp.NUM_OF_ACCESSPOINT), 0, done)
         T += 1
 else:
     num_cores = min(multiprocessing.cpu_count(), gp.ALLOCATED_CORES) - 1
@@ -247,15 +250,15 @@ else:
 
         for res in train_history_aps:
             for index, memerys in enumerate(res):
-                for state, _, _, _, done in memerys:
-                    val_mem_aps[index].append(state[index], _, _, _, done)
+                for state, _, _, _, _, _, done in memerys:
+                    val_mem_aps[index].append(state, _, _, _, _, _, done)
 
 if args.evaluate:
     for index in range(env.environment.ap_number):
         dqn[index].eval()  # Set DQN (online network) to evaluation mode
-    avg_reward, avg_Q = test(args, 0, dqn, val_mem_aps, matric, metrics, results_dir, evaluate=True)  # Test
+    (avg_pack) = test(args, 0, dqn, val_mem_aps, matric, results_dir, evaluate=True)  # Test
     for index in range(env.environment.ap_number):
-        print('Avg. reward for ap' + str(index) + ': ' + str(avg_reward[index]) + ' | Avg. Q: ' + str(avg_Q[index]))
+        print('Avg. reward for ap' + str(index) + ': ' + str(avg_pack[0][index]) + ' | Avg. Q: ' + str(avg_pack[1][index]))
 else:
     # Training loop
     T, aps_state, epsilon, done = 0, None, args.epsilon_max, env.reset()
@@ -273,7 +276,7 @@ else:
                 for index, ap_rein in enumerate(reinforce_ap):
                     for ap_pair in ap_rein:
                         for ap_ele in ap_pair:
-                            mem_aps[index].append(ap_ele[0], ap_ele[1], ap_ele[2], ap_ele[3], ap_ele[4])
+                            mem_aps[index].append(ap_ele[0], ap_ele[1], ap_ele[2], ap_ele[3], ap_ele[4], ap_ele[5], ap_ele[6])
             reinforce_ap = []
             for i in range(env.environment.ap_number):
                 temp = []
@@ -293,19 +296,25 @@ else:
         for _ in range(env.environment.ap_number):
             if args.reward_clip > 0:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
-            mem_aps[_].append(state[_], action[_], avail[_], reward[_], done)  # Append transition to memory
+            neighbor_indice = env.environment.coop_graph.neighbor_indices(_, True)
+            action_patch = np.append(action, [-1])
+            mem_aps[_].append(state[_], action[_], action_patch[neighbor_indice], action, avail[_], reward[_], done)
+            # Append transition to memory
             if args.data_reinforce:
                 # data reinforcement, not applicapable with infinite environment
                 obs = state[_]
-                act = action[_]
                 obs = torch.rot90(obs, 2, [1, 2])
-                if act != 12 and not reward[_] == 0:
-                    act = (-6 + action[_] + 12) % 12
-                    reinforce_ap[_][0].append((obs, act, env.rot_avail(avail[_]), reward[_], done))
-                    reinforce_ap[_][1].append((torch.flip(obs, [1]), ((6 - act % 6) + 6 * (act // 6)) % 12,
-                                                env.flip_avail(env.rot_avail(avail[_])), reward[_], done))
-                    reinforce_ap[_][2].append((torch.flip(state[_], [1]), ((6 - action[_] % 6) + 6 * (action[_] // 6)) % 12,
-                                                env.flip_avail(avail[_]), reward[_], done))
+                if action[_] != 12 and not reward[_] == 0:
+                    reinforce_ap[_][0].append((obs, env.rot_action(action[_]),
+                                               env.rot_action(action_patch[neighbor_indice]),
+                                               env.rot_action(action), env.rot_avail(avail[_]), reward[_], done))
+                    reinforce_ap[_][1].append((torch.flip(obs, [1]), env.flip_action(env.rot_action(action))[_],
+                                               env.flip_action(env.rot_action(action_patch[neighbor_indice])),
+                                               env.flip_action(env.rot_action(action)),
+                                               env.flip_avail(env.rot_avail(avail[_])), reward[_], done))
+                    reinforce_ap[_][2].append((torch.flip(state[_], [1]), env.flip_action(action)[_],
+                                               env.flip_action(action_patch[neighbor_indice]),
+                                               env.flip_action(action), env.flip_avail(avail[_]), reward[_], done))
                     # append rotated observation for data reinforcement
 
         if T >= args.learn_start:
@@ -323,8 +332,12 @@ else:
                 global_model.set_state_dict(global_weight)
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + ' Global averaging starts')
                 global_model.save(results_dir, 'Global_')
+                average_reward = np.array([model.average_reward for model in dqn])
+                average_reward = np.mean(average_reward)
+                log('T = ' + str(T) + ' / ' + str(args.T_max) + ' Averaged reward is: ' + str(float(average_reward)))
                 for models in dqn:
                     models.set_state_dict(global_weight)
+                    models.average_reward = average_reward
 
             # If memory path provided, save it
             for index in range(env.environment.ap_number):

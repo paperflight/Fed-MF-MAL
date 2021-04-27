@@ -444,29 +444,25 @@ class Channel:
     def decentralized_reward(self, sinr, aa):
         sinr_clip = np.log2(sinr + 1)
         sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
-        # sinr_clip /= gp.USER_QOS
         self.user_qos[:, 0] -= sinr_clip
         self.user_qos[:, 1] -= 1
         rest = np.all(self.user_qos > 0, axis=1)
         gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
-        # sinr_clip = (np.log10(sinr_clip / gp.USER_QOS + 1) * 2 - 0.35) * 5
 
-        # sinr_x = self.sinr_ap_user_noncoop()
-        # sinr_x[np.where(sinr_clip == 0)] = 0
-        # # sinr_x[sinr_x > 8] = 8
-        # sinr_x = np.log10(sinr_x / 8 + 1) * 2
-        # sinr_clip = sinr_clip - sinr_x
+        sinr_clip[gain] += self.user_qos[gain, 0]
+
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
         ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
                                                                                 (gp.ACCESS_POINTS_FIELD - 1) / 2),
                                          axis=2)
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        ap_observe_relation = np.logical_and(ap_observe_relation_edg, ap_observe_relation)
-        ap_distribute_reward = ap_observe_relation * gain
+        # ap_observe_relation = np.logical_and(ap_observe_relation_edg, ap_observe_relation)
+        ap_distribute_reward = ap_observe_relation * sinr_clip
         normalized_factor = np.sum(ap_observe_relation, axis=1)
         normalized_factor[normalized_factor == 0] = 1
-        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / normalized_factor
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / \
+                               (gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
         # normalization
 
         if gp.USER_WAITING == 1:
@@ -548,7 +544,7 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
-        return ap_distribute_reward / 5
+        return ap_distribute_reward
 
     def decentralized_reward_directional(self, sinr, action):
         sinr_clip = np.log2(sinr + 1)
@@ -619,7 +615,7 @@ if __name__ == "__main__":
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
-        res = x.decentralized_reward_directional(sinr, aa)
+        res = x.decentralized_reward(sinr, action)
         sinr = np.log2(sinr + 1)
         res_avg += res
         mean_sinr += np.mean(sinr)
@@ -631,7 +627,7 @@ if __name__ == "__main__":
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
-        res = x.decentralized_reward_directional(sinr, aa)
+        res = x.decentralized_reward(sinr, action)
         sinr = np.log2(sinr + 1)
         mean_sinr += np.mean(sinr)
         res_avg1 += res

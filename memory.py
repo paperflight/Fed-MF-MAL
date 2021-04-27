@@ -9,8 +9,12 @@ import GLOBAL_PRARM as gp
 
 scale_factor = 255
 Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (2, 47, 47)),
-                             ('action', np.int8), ('avail', np.bool, (gp.ACTION_NUM)), ('reward', np.float32), ('nonterminal', np.bool_)])
-blank_trans_aps = (0, np.zeros((2, 47, 47), dtype=np.uint8), 0, np.ones(gp.ACTION_NUM, dtype=np.bool), 0.0, False)
+                             ('action', np.int8), ('neighbor_action', np.int8, (6 + 1)),
+                             ('global_action', np.int8, (gp.NUM_OF_ACCESSPOINT)),
+                             ('avail', np.bool, (gp.ACTION_NUM)),
+                             ('reward', np.float32), ('nonterminal', np.bool_)])
+blank_trans_aps = (0, np.zeros((2, 47, 47), dtype=np.uint8), 0, np.ones(7, dtype=np.int8),
+                   np.ones(gp.NUM_OF_ACCESSPOINT, dtype=np.int8), np.ones(gp.ACTION_NUM, dtype=np.bool), 0.0, False)
 
 
 # Segment tree data structure where parent node values are sum/max of children node values
@@ -97,12 +101,9 @@ class SegmentTree():
 
 
 class ReplayMemory:
-    def __init__(self, args, capacity, typeof_black: bool, remove_function=None):
-        """
-        :parameter typeof_black: True: use ap_black, False: use scheduler_black
-        """
+    def __init__(self, args, capacity, remove_function=None):
         self.device = args.device
-        self.typeof_black = typeof_black
+        self.current_action_obs = args.current_action_observable
         self.previous_action_obs_ap = args.previous_action_observable
         self.remove_function = remove_function
         self.capacity = capacity
@@ -120,14 +121,14 @@ class ReplayMemory:
         # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
 
     # Adds state and action at time t, reward and terminal at time t + 1
-    def append(self, state, action, avail, reward, terminal):
+    def append(self, state, action, nei_action, glob_action, avail, reward, terminal):
         if gp.ACTION_NUM == 6:
             action = int((action - 1) / 2)
         state_clip = torch.clone(state)
         state_clip[0] = (state_clip[0] + 1) / 2
         state_clip = state_clip.mul(scale_factor).to(dtype=torch.uint8, device=torch.device('cpu'))
         # Only store last frame and discretise to save memory
-        self.transitions.append((self.t, state_clip, action, avail, reward, not terminal),
+        self.transitions.append((self.t, state_clip, action, nei_action, glob_action, avail, reward, not terminal),
                                 self.transitions.max)  # Store new transition with maximum priority
         self.t = 0 if terminal else self.t + 1  # Start new episodes with t = 0
         # Returns the transitions with blank states where appropriate
@@ -172,13 +173,17 @@ class ReplayMemory:
                                   device=self.device, dtype=torch.float32).div_(scale_factor)
         next_state = torch.reshape(next_state, (batch_size, -1, next_state.shape[-2], next_state.shape[-1]))
         next_state[:, 0::gp.OBSERVATION_DIMS] = torch.round((next_state[:, 0::gp.OBSERVATION_DIMS] - 0.5) * 2)
-        if self.typeof_black and self.previous_action_obs_ap:
+        if not self.current_action_obs:
             state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :] = \
                 self.remove_function(state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :])
             next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :] = \
                 self.remove_function(next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :])
         # Discrete action to be used as index
         action = torch.tensor(np.copy(transitions['action'][:, self.history - 1]), dtype=torch.int64, device=self.device)
+        nei_action = torch.tensor(np.copy(transitions['neighbor_action'][:, self.history - 1]),
+                                  dtype=torch.int64, device=self.device)
+        glob_action = torch.tensor(np.copy(transitions['global_action'][:, self.history - 1]),
+                                   dtype=torch.int64, device=self.device)
         avail = torch.tensor(np.copy(transitions['avail'][:, self.history - 1]), dtype=torch.bool, device=self.device)
         # Calculate truncated n-step discounted return R^n = Σ_k=0->n-1 (γ^k)R_t+k+1 (note that invalid nth next states have reward 0)
         R = torch.tensor(np.copy(transitions['reward'][:, self.history - 1:-1]), device=self.device, dtype=torch.float32)
@@ -188,19 +193,19 @@ class ReplayMemory:
             np.expand_dims(transitions['nonterminal'][:, self.history + self.n - 1], axis=1),
             dtype=torch.float32, device=self.device)
 
-        return probs, idxs, tree_idxs, state, action, avail, R, next_state, nonterminal
+        return probs, idxs, tree_idxs, state, action, nei_action, glob_action, avail, R, next_state, nonterminal
 
     def sample(self, batch_size, avg=0):
         p_total = self.transitions.total()
         # Retrieve sum of all priorities (used to create a normalised probability distribution)
-        probs, idxs, tree_idxs, states, actions, avail, returns, next_states, nonterminals = \
+        probs, idxs, tree_idxs, states, actions, nei_action, glob_action, avail, returns, next_states, nonterminals = \
             self._get_sample_from_segment(batch_size, p_total, avg)
         probs = probs / p_total  # Calculate normalised probabilities
         capacity = self.capacity if self.transitions.full else self.transitions.index
         weights = (capacity * probs) ** -self.priority_weight  # Compute importance-sampling weights w
         weights = torch.tensor(weights / weights.max(), dtype=torch.float32,
                                device=self.device)  # Normalise by max importance-sampling weight from batch
-        return tree_idxs, states, actions, avail, returns, next_states, nonterminals, weights
+        return tree_idxs, states, actions, nei_action, glob_action, avail, returns, next_states, nonterminals, weights
 
     def update_priorities(self, idxs, priorities):
         priorities = np.power(priorities, self.priority_exponent)
@@ -227,7 +232,7 @@ class ReplayMemory:
         state = torch.reshape(state, (-1, state.shape[-2], state.shape[-1]))
         state[0::gp.OBSERVATION_DIMS] = torch.round((state[0::gp.OBSERVATION_DIMS] - 0.5) * 2)
         # Agent will turn into batch
-        if self.typeof_black and self.previous_action_obs_ap:
+        if not self.current_action_obs:
             state[gp.OBSERVATION_DIMS * (self.history - 1), :, :] = \
                 self.remove_function(state[gp.OBSERVATION_DIMS * (self.history - 1), :, :])
         self.current_idx += 1

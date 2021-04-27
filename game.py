@@ -220,6 +220,20 @@ class Decentralized_Game:
         return new_avail
 
     @staticmethod
+    def flip_action(act: int or np.ndarray):
+        temp = ((6 - act % 6) + 6 * (act // 6)) % 12
+        if type(act) is np.ndarray:
+            temp[np.where(act == -1)[0]] = -1
+        return temp
+
+    @staticmethod
+    def rot_action(act: int or np.ndarray):
+        temp = (-6 + act + 12) % 12
+        if type(act) is np.ndarray:
+            temp[np.where(act == -1)[0]] = -1
+        return temp
+
+    @staticmethod
     def rot_avail(avail):
         if len(avail) == 6:
             act = np.where(avail == True)[0]
@@ -289,20 +303,23 @@ class Decentralized_Game:
         action = []
         if accesspoint is None:
             action = self.environment.random_action('double', avil_action)
-            action_re = action
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
                 action.append(accesspoint[index].act_e_greedy(ap_state[index], avil_action[index],
                                                               epsilon, self.args.action_selection))
                 # Choose an action greedily (with noisy weights)
-            if gp.ACTION_NUM == 6:
-                action_re = np.array(action) * 2 + 1
-            else:
-                action_re = action
+        action = np.array(action)
+        if gp.ACTION_NUM == 6:
+            action_re = action * 2 + 1
+        else:
+            action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
+        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), action_re)
+
+        adj_ind = np.where(action_re != 12)[0]
+        action_re[adj_ind] = actual_action[adj_ind]
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
@@ -333,25 +350,28 @@ class Decentralized_Game:
         action = []
         if accesspoint is None:
             action = self.environment.random_action('double', avil_action)
-            action_re = action
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):
                 pipe.send((ap_state[index], avil_action[index]))
                 action.append(pipe.recv())
                 # Choose an action greedily (with noisy weights)
+        action = np.array(action)
         if gp.ACTION_NUM == 6:
-            action_re = np.array(action) * 2 + 1
+            action_re = action * 2 + 1
         else:
             action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
+        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), action_re)
+
+        adj_ind = np.where(action_re != 12)[0]
+        action_re[adj_ind] = actual_action[adj_ind]
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
-        return ap_state, action, avil_action, \
+        return ap_state, action_re, avil_action, \
                [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def close(self):

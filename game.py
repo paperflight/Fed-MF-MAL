@@ -302,7 +302,7 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action = self.environment.random_action('double', avil_action)
+            action = self.environment.random_action('randomnon12', avil_action)
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
@@ -348,7 +348,7 @@ class Decentralized_Game:
 
         action = []
         if accesspoint is None:
-            action = self.environment.random_action('double', avil_action)
+            action = self.environment.random_action('randomnon12', avil_action)
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):

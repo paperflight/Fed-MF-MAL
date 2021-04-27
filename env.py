@@ -326,6 +326,8 @@ class Channel:
             raise TypeError("Function only called in Debug Mode")
         if action_type == 'random':
             action = np.random.randint(12, size=self.ap_number, dtype=int)
+        elif action_type == 'randomnon12':
+            action = np.random.randint(11, size=self.ap_number, dtype=int)
         elif action_type == 'isolate':
             action = np.ones(self.ap_number, dtype=int) * 12
         elif action_type == 'updown':

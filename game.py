@@ -369,7 +369,7 @@ class Decentralized_Game:
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
-        return ap_state, action_re, avil_action, \
+        return ap_state, action, avil_action, \
                [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def close(self):

@@ -25,7 +25,7 @@ import torch.multiprocessing
 # TODO: When running in server, uncomment this line if needed
 import copy as cp
 
-from rainbow.agent import Agent
+from ddpg.agent import Agent
 from game import Decentralized_Game as Env
 from memory import ReplayMemory
 from test import test, test_p
@@ -53,8 +53,8 @@ parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help
 parser.add_argument('--noisy-std', type=float, default=0.3, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
 parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=-1, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=1, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--V-min', type=float, default=-2, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=3, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')
@@ -85,12 +85,12 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='SIZE', help='
 parser.add_argument('--better-indicator', type=float, default=1.0, metavar='b',
                     help='The new model should be b times of old performance to be recorded')
 # TODO: Switch interval should not be large
-parser.add_argument('--learn-start', type=int, default=int(400), metavar='STEPS',
+parser.add_argument('--learn-start', type=int, default=int(2000), metavar='STEPS',
                     help='Number of steps before starting training')
 parser.add_argument('--evaluate', action='store_true', help='Evaluate only')
 parser.add_argument('--data-reinforce', action='store_true', help='DataReinforcement')
 # TODO: Change this after debug
-parser.add_argument('--evaluation-interval', type=int, default=200, metavar='STEPS',
+parser.add_argument('--evaluation-interval', type=int, default=2000, metavar='STEPS',
                     help='Number of training steps between evaluations')
 parser.add_argument('--evaluation-episodes', type=int, default=400, metavar='N',
                     help='Number of evaluation episodes to average over')
@@ -169,7 +169,7 @@ def save_memory(memory, memory_path, disable_bzip, index=-1):
 
 def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode):
     train_examples_aps = []
-    for _ in range(env.environment.ap_number):
+    for _ in range(new_game.environment.ap_number):
         train_examples_aps.append([])
     eps, done = 0, True
     while eps < episode:
@@ -177,11 +177,13 @@ def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode)
             done = new_game.reset()
         state, action, avail, reward, done = new_game.step()  # Step
         for index_p, ele_p in enumerate(state):
-            train_examples_aps[index_p].append((ele_p, 0, np.zeros(gp.ACTION_NUM), np.zeros(7),
-                                                np.zeros(gp.NUM_OF_ACCESSPOINT), 0, done))
+            neighbor_indice = new_game.environment.coop_graph.neighbor_indices(index_p, True)
+            action_patch = np.append(action, [-1])
+            train_examples_aps[index_p].append((ele_p, action[index_p], action_patch[neighbor_indice],
+                                                action, avail[index_p], reward[index_p], done))
         eps += 1
     train_history_aps_parallel.append(train_examples_aps)
-    
+
 
 # Environment
 env = Env(args)
@@ -226,8 +228,10 @@ if not gp.PARALLEL_EXICUSION:
             done = env.reset()
         state, action, avail, reward, done = env.step()
         for index, ele in enumerate(state):
-            val_mem_aps[index].append(ele, 0, np.zeros(gp.ACTION_NUM), np.zeros(7),
-                                      np.zeros(gp.NUM_OF_ACCESSPOINT), 0, done)
+            neighbor_indice = env.environment.coop_graph.neighbor_indices(index, True)
+            action_patch = np.append(action, [-1])
+            val_mem_aps[index].append(ele, action[index], action_patch[neighbor_indice],
+                                      action, avail[index], reward[index], done)
         T += 1
 else:
     num_cores = min(multiprocessing.cpu_count(), gp.ALLOCATED_CORES) - 1
@@ -250,8 +254,8 @@ else:
 
         for res in train_history_aps:
             for index, memerys in enumerate(res):
-                for state, _, _, _, _, _, done in memerys:
-                    val_mem_aps[index].append(state, _, _, _, _, _, done)
+                for state, a, na, ga, av, rw, done in memerys:
+                    val_mem_aps[index].append(state, a, na, ga, av, rw, done)
 
 if args.evaluate:
     for index in range(env.environment.ap_number):
@@ -329,7 +333,9 @@ else:
 
             if T % args.federated_round == 0 and 0 < args.federated_round:
                 global_weight = average_weights([model.get_state_dict() for model in dqn])
+                global_target = average_weights([model.get_target_dict() for model in dqn])
                 global_model.set_state_dict(global_weight)
+                global_model.set_target_dict(global_target)
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + ' Global averaging starts')
                 global_model.save(results_dir, 'Global_')
                 average_reward = np.array([model.average_reward for model in dqn])
@@ -337,6 +343,7 @@ else:
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + ' Averaged reward is: ' + str(float(average_reward)))
                 for models in dqn:
                     models.set_state_dict(global_weight)
+                    models.set_target_dict(global_target)
                     models.average_reward = average_reward
 
             # If memory path provided, save it

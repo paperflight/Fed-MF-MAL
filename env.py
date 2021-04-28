@@ -459,7 +459,7 @@ class Channel:
                                                                                 (gp.ACCESS_POINTS_FIELD - 1) / 2),
                                          axis=2)
         ap_observe_relation = np.all(np.absolute(ap_observe_relation) < int((gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
-        # ap_observe_relation = np.logical_and(ap_observe_relation_edg, ap_observe_relation)
+        ap_observe_relation = np.logical_and(ap_observe_relation_edg, ap_observe_relation)
         ap_distribute_reward = ap_observe_relation * sinr_clip
         normalized_factor = np.sum(ap_observe_relation, axis=1)
         normalized_factor[normalized_factor == 0] = 1
@@ -617,6 +617,8 @@ if __name__ == "__main__":
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
+        adj_ind = np.where(aa != 12)[0]
+        action[adj_ind] = aa[adj_ind]
         res = x.decentralized_reward(sinr, action)
         sinr = np.log2(sinr + 1)
         res_avg += res
@@ -629,6 +631,8 @@ if __name__ == "__main__":
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
+        adj_ind = np.where(aa != 12)[0]
+        action[adj_ind] = aa[adj_ind]
         res = x.decentralized_reward(sinr, action)
         sinr = np.log2(sinr + 1)
         mean_sinr += np.mean(sinr)

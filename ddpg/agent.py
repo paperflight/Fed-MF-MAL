@@ -11,6 +11,9 @@ import GLOBAL_PRARM as gp
 from ddpg.basic_block import Actor_Critic
 
 
+# TODO: maddpg learns fast, set a small target network update rate or remove target nework for non-episodic cases
+
+
 class Agent:
     def __init__(self, args, env, index):
         self.action_space = env.get_action_size()
@@ -66,6 +69,13 @@ class Agent:
 
     def set_state_dict(self, new_state_dict):
         self.online_net.load_state_dict(new_state_dict)
+        return
+
+    def get_target_dict(self):
+        return self.target_net.state_dict()
+
+    def set_target_dict(self, new_state_dict):
+        self.target_net.load_state_dict(new_state_dict)
         return
 
     # Resets noisy weights in all linear layers (of online net only)
@@ -144,41 +154,50 @@ class Agent:
             # another thread. Keep the gpu resource inside main thread
         return list_pro.any()
 
-    def one_hot(self, actions):
-        onehot = torch.zeros((actions.shape[0], self.action_space))
-        onehot[:, actions] = 1
-        return onehot
+    @staticmethod
+    def _to_one_hot(y, num_classes):
+        y = torch.as_tensor(y)
+        y[y == -1] = num_classes
+        scatter_dim = len(y.size())
+        y_tensor = y.view(*y.size(), -1)
+        zeros = torch.zeros(*y.size(), num_classes + 1, dtype=y.dtype)
+        zeros = zeros.scatter(scatter_dim, y_tensor, 1)
+        return zeros[..., 0:num_classes]
 
     def learn(self, mem):
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, _, _, avails, returns, next_states, nonterminals, weights = \
+        idxs, states, actions, neighbor_action, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
 
-        # Actor update
-        policy_loss = -self.online_net(states, False, self.online_net(states))
-        policy_loss = policy_loss.mean()
+        # critic update
+        self.optimiser.zero_grad()
 
         # Prepare for the target q batch
         with torch.no_grad():
-            next_q_values = self.target_net(next_states, False, self.target_net(next_states))
+            next_q_values = self.online_net(next_states, False, self._to_one_hot(neighbor_action[1], self.action_space))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
 
-        q_batch = self.online_net(states, False, self.one_hot(actions))
-        # value_loss = self.mseloss(q_batch, target_q_batch)
+        q_batch = self.online_net(states, False, self._to_one_hot(neighbor_action[0], self.action_space))
         value_loss = self.mseloss(q_batch, target_q_batch)
 
-        self.online_net.zero_grad()
-        policy_loss.backward()
-        self.optimiser.step()
-        value_loss.backward()
+        # Actor update
+        policy_loss = -self.online_net(states, False, self._to_one_hot(neighbor_action[0], self.action_space))
+        curr_policy_out = self.online_net(states)
+        policy_loss = policy_loss.mean()
+        policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
+
+        (value_loss + policy_loss).backward()
+        torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
 
         # update the average reward
         self.average_reward = self.average_reward + \
                               self.reward_update_rate * torch.mean(target_q_batch.detach() - q_batch.detach())
         self.average_reward = self.average_reward.detach()
+        if self.average_reward <= -1:
+            self.average_reward = -1  # do some crop
 
         mem.update_priorities(idxs, value_loss.detach().cpu().numpy())  # Update priorities of sampled transitions
 

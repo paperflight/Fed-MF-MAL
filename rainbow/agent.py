@@ -74,6 +74,13 @@ class Agent:
         self.online_net.load_state_dict(new_state_dict)
         return
 
+    def get_target_dict(self):
+        return self.target_net.state_dict()
+
+    def set_target_dict(self, new_state_dict):
+        self.target_net.load_state_dict(new_state_dict)
+        return
+
     # Resets noisy weights in all linear layers (of online net only)
     def reset_noise(self):
         self.online_net.reset_noise()

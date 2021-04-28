@@ -165,7 +165,7 @@ class Agent:
         zeros = zeros.scatter(scatter_dim, y_tensor, 1)
         return zeros[..., 0:num_classes]
 
-    def blind_neighbor_observation(self, state, neighbor_action):
+    def blind_neighbor_observation(self, state, neighbor_action, target=True):
         pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
         one_side_length = int((state.size(-1) - 1) / 2)
 
@@ -185,7 +185,10 @@ class Agent:
                 d = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
                 corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
                 neib_ind += 1
-                returns[:, ap_index] = self.online_net(corp_state)
+                if target:
+                    returns[:, ap_index] = self.target_net(corp_state)
+                else:
+                    returns[:, ap_index] = self.online_net(corp_state)
         return returns
 
     def learn(self, mem):
@@ -200,8 +203,11 @@ class Agent:
 
         # Prepare for the target q batch
         with torch.no_grad():
-            next_q_values = self.online_net(next_states, False, self.blind_neighbor_observation(states, neighbor_action))
+            next_q_values = self.target_net(next_states, False, self.blind_neighbor_observation(states, neighbor_action))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
+            av_q_values = self.online_net(next_states, False,
+                                            self.blind_neighbor_observation(states, neighbor_action, False))
+            av_q_values = returns.unsqueeze(1) + self.discount * nonterminals * av_q_values
 
         q_batch = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
         value_loss = self.mseloss(q_batch, target_q_batch)
@@ -218,7 +224,7 @@ class Agent:
 
         # update the average reward
         self.average_reward = self.average_reward + \
-                              self.reward_update_rate * torch.mean(target_q_batch.detach() - q_batch.detach())
+                              self.reward_update_rate * torch.mean(av_q_values.detach() - q_batch.detach())
         self.average_reward = self.average_reward.detach()
         if self.average_reward <= -1:
             self.average_reward = -1  # do some crop

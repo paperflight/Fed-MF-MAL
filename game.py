@@ -343,7 +343,7 @@ class Decentralized_Game:
         for index, tensor_obs in enumerate(self.get_observation_tensor()):
             self.state_buffer[index].append(tensor_obs)
 
-        ap_state = [torch.cat(list(aps_obv), dim=0) for aps_obv in self.state_buffer]
+        ap_state = [torch.cat(list(aps_obv).reverse(), dim=0) for aps_obv in self.state_buffer]
         #  TODO: if state dims is two, change this to stack
 
         action = []

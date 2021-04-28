@@ -7,8 +7,9 @@ from torch import optim
 from scipy.special import softmax as softmax_sci
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
+import math
 
-from ddpg.basic_block import Actor_Critic
+from maddpg_sp.basic_block import Actor_Critic
 
 
 # TODO: maddpg learns fast, set a small target network update rate or remove target nework for non-episodic cases
@@ -164,6 +165,29 @@ class Agent:
         zeros = zeros.scatter(scatter_dim, y_tensor, 1)
         return zeros[..., 0:num_classes]
 
+    def blind_neighbor_observation(self, state, neighbor_action):
+        pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
+        one_side_length = int((state.size(-1) - 1) / 2)
+
+        state_pad = torch.nn.functional.pad(state, (one_side_length, one_side_length, one_side_length, one_side_length),
+                                            "constant", 0)
+
+        returns = torch.zeros(*neighbor_action.size(), self.action_space, dtype=torch.float32)
+        neighbor_ind = torch.where(state_pad[0, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
+        neib_ind = 0
+        for ap_index, aps_act in enumerate(neighbor_action[-1]):
+            if aps_act == -1:
+                returns[:, ap_index] = 0
+            else:
+                a = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                b = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                c = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                d = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
+                neib_ind += 1
+                returns[:, ap_index] = self.online_net(corp_state)
+        return returns
+
     def learn(self, mem):
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
@@ -176,15 +200,17 @@ class Agent:
 
         # Prepare for the target q batch
         with torch.no_grad():
-            next_q_values = self.online_net(next_states, False, self.online_net(next_states))
+            next_q_values = self.online_net(next_states, False, self.blind_neighbor_observation(states, neighbor_action))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
 
-        q_batch = self.online_net(states, False, self._to_one_hot(actions, self.action_space))
+        q_batch = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
         value_loss = self.mseloss(q_batch, target_q_batch)
 
         # Actor update
-        policy_loss = -self.online_net(states, False, self.online_net(states))
+        policy_loss = -self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
+        curr_policy_out = self.online_net(states)
         policy_loss = policy_loss.mean()
+        policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
 
         (value_loss + policy_loss).backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)

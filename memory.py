@@ -184,10 +184,6 @@ class ReplayMemory:
                                   dtype=torch.int64, device=self.device)
         glob_action = torch.tensor(np.copy(transitions['global_action'][:, self.history - 1]),
                                    dtype=torch.int64, device=self.device)
-        next_nei_action = torch.tensor(np.copy(transitions['neighbor_action'][:, self.n + self.history - 1]),
-                                       dtype=torch.int64, device=self.device)
-        next_glob_action = torch.tensor(np.copy(transitions['global_action'][:, self.n + self.history - 1]),
-                                        dtype=torch.int64, device=self.device)
         avail = torch.tensor(np.copy(transitions['avail'][:, self.history - 1]), dtype=torch.bool, device=self.device)
         # Calculate truncated n-step discounted return R^n = Σ_k=0->n-1 (γ^k)R_t+k+1 (note that invalid nth next states have reward 0)
         R = torch.tensor(np.copy(transitions['reward'][:, self.history - 1:-1]), device=self.device, dtype=torch.float32)
@@ -197,8 +193,8 @@ class ReplayMemory:
             np.expand_dims(transitions['nonterminal'][:, self.history + self.n - 1], axis=1),
             dtype=torch.float32, device=self.device)
 
-        return probs, idxs, tree_idxs, state, action, (nei_action, next_nei_action), \
-               (glob_action, next_glob_action), avail, R, next_state, nonterminal
+        return probs, idxs, tree_idxs, state, action, nei_action, \
+               glob_action, avail, R, next_state, nonterminal
 
     def sample(self, batch_size, avg=0):
         p_total = self.transitions.total()

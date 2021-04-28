@@ -25,7 +25,7 @@ import torch.multiprocessing
 # TODO: When running in server, uncomment this line if needed
 import copy as cp
 
-from ddpg.agent import Agent
+from maddpg_sp.agent import Agent
 from game import Decentralized_Game as Env
 from memory import ReplayMemory
 from test import test, test_p

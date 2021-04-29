@@ -225,17 +225,18 @@ class Agent:
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
 
+        # # update the average reward
+        # with torch.no_grad():
+        #     av_q_values = self.online_net(next_states, False,
+        #                                   self.blind_neighbor_observation(next_states, neighbor_action, False))
+        #     av_q_values = returns.unsqueeze(1) + self.discount * nonterminals * av_q_values
+
         (value_loss + policy_loss).backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
 
-        # update the average reward
-        with torch.no_grad():
-            av_q_values = self.online_net(next_states, False,
-                                          self.blind_neighbor_observation(next_states, neighbor_action, False))
-            av_q_values = returns.unsqueeze(1) + self.discount * nonterminals * av_q_values
         self.average_reward = self.average_reward + \
-                              self.reward_update_rate * torch.mean(av_q_values.detach() - q_batch.detach())
+                              self.reward_update_rate * torch.mean(target_q_batch.detach() - q_batch.detach())
         self.average_reward = self.average_reward.detach()
         if self.average_reward <= -1:
             self.average_reward = -1  # do some crop

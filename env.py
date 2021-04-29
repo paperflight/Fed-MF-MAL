@@ -598,7 +598,7 @@ class Channel:
             # self.channel = self.channel[:, rest]
         ap_distribute_reward[np.where(action == 12)[0]] = -0.1
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
-        return ap_distribute_reward
+        return ap_distribute_reward - 0.5
 
 
 if __name__ == "__main__":
@@ -619,7 +619,7 @@ if __name__ == "__main__":
         sinr, action, aa = x.test_sinr('random')
         adj_ind = np.where(aa != 12)[0]
         action[adj_ind] = aa[adj_ind]
-        res = x.decentralized_reward_exclude_central(sinr, action)
+        res = x.decentralized_reward_directional(sinr, action)
         sinr = np.log2(sinr + 1)
         res_avg += res
         mean_sinr += np.mean(sinr)
@@ -630,10 +630,10 @@ if __name__ == "__main__":
     res_avg1 = np.zeros(20)
     mean_sinr = 0
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('updown')
+        sinr, action, aa = x.test_sinr('fixed')
         adj_ind = np.where(aa != 12)[0]
         action[adj_ind] = aa[adj_ind]
-        res = x.decentralized_reward_exclude_central(sinr, action)
+        res = x.decentralized_reward_directional(sinr, action)
         sinr = np.log2(sinr + 1)
         mean_sinr += np.mean(sinr)
         res_avg1 += res

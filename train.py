@@ -52,9 +52,9 @@ parser.add_argument('--architecture', type=str, default='canonical_61obv_16ap', 
 parser.add_argument('--hidden-size', type=int, default=256, metavar='SIZE', help='Network hidden size')
 parser.add_argument('--noisy-std', type=float, default=0.3, metavar='σ',
                     help='Initial standard deviation of noisy linear layers')
-parser.add_argument('--atoms', type=int, default=51, metavar='C', help='Discretised size of value distribution')
-parser.add_argument('--V-min', type=float, default=-2, metavar='V', help='Minimum of value distribution support')
-parser.add_argument('--V-max', type=float, default=3, metavar='V', help='Maximum of value distribution support')
+parser.add_argument('--atoms', type=int, default=21, metavar='C', help='Discretised size of value distribution')
+parser.add_argument('--V-min', type=float, default=-1, metavar='V', help='Minimum of value distribution support')
+parser.add_argument('--V-max', type=float, default=1, metavar='V', help='Maximum of value distribution support')
 # TODO: Make sure the value located inside V_min and V_max
 parser.add_argument('--epsilon-min', type=float, default=0.0, metavar='ep_d', help='Minimum of epsilon')
 parser.add_argument('--epsilon-max', type=float, default=0.0, metavar='ep_u', help='Maximum of epsilon')
@@ -74,9 +74,9 @@ parser.add_argument('--priority-weight', type=float, default=0.4, metavar='β',
 parser.add_argument('--multi-step', type=int, default=1, metavar='n',
                     help='Number of steps for multi-step return')
 parser.add_argument('--discount', type=float, default=1, metavar='γ', help='Discount factor')
-parser.add_argument('--target-update', type=int, default=int(8000), metavar='τ',
+parser.add_argument('--target-update', type=int, default=int(4000), metavar='τ',
                     help='Number of steps after which to update target network')
-parser.add_argument('--reward-clip', type=int, default=5, metavar='VALUE', help='Reward clipping (0 to disable)')
+parser.add_argument('--reward-clip', type=int, default=1, metavar='VALUE', help='Reward clipping (0 to disable)')
 parser.add_argument('--learning-rate', type=float, default=0.0000625, metavar='η', help='Learning rate')
 parser.add_argument('--reward-update-rate', type=float, default=0.01, metavar='η',
                     help='Average value step rate (for non-episodic task)')

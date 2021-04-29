@@ -211,7 +211,7 @@ class Agent:
             next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action)
             next_q_values = self.online_net(next_states, False,
                                        torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
-                                                  torch.tensor(next_q_action).unsqueeze(1),
+                                                  self._to_one_hot(torch.tensor(next_q_action), self.action_space).unsqueeze(1),
                                                   next_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
                                        dim=1))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values

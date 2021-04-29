@@ -203,17 +203,18 @@ class Agent:
 
         # Prepare for the target q batch
         with torch.no_grad():
-            next_q_values = self.target_net(next_states, False, self.blind_neighbor_observation(states, neighbor_action))
+            next_q_values = self.target_net(next_states, False,
+                                            self.blind_neighbor_observation(next_states, neighbor_action))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
             av_q_values = self.online_net(next_states, False,
-                                            self.blind_neighbor_observation(states, neighbor_action, False))
+                                            self.blind_neighbor_observation(next_states, neighbor_action, False))
             av_q_values = returns.unsqueeze(1) + self.discount * nonterminals * av_q_values
 
         q_batch = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
         value_loss = self.mseloss(q_batch, target_q_batch)
 
         # Actor update
-        policy_loss = -self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
+        policy_loss = -self.online_net(states, False, self.blind_neighbor_observation(states, neighbor_action, False))
         curr_policy_out = self.online_net(states)
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_policy_out ** 2).mean() * 1e-3

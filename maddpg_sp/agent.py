@@ -207,40 +207,35 @@ class Agent:
 
         # Prepare for the target q batch
         with torch.no_grad():
-            next_q_values = self.target_net(next_states, False,
-                                            self.blind_neighbor_observation(next_states, neighbor_action[0]))
+            next_q_action = self.boltzmann(self.target_net(next_states), avails)
+            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action)
+            next_q_values = self.online_net(next_states, False,
+                                       torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
+                                                  torch.tensor(next_q_action).unsqueeze(1),
+                                                  next_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
+                                       dim=1))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
 
-        q_batch = self.online_net(states, False, self._to_one_hot(neighbor_action[0], self.action_space))
+        q_batch = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
         value_loss = self.mseloss(q_batch, target_q_batch)
 
         # Actor update
         curr_policy_out = self.online_net(states)
         curr_nei_policy_out = self.blind_neighbor_observation(states, neighbor_action[0], False)
         policy_loss = -self.online_net(states, False,
-                                       torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action[0].size(1) - 1) / 2)],
+                                       torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                   curr_policy_out.unsqueeze(1),
-                                                  curr_nei_policy_out[:, int((neighbor_action[0].size(1) + 1) / 2)::]],
+                                                  curr_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
                                        dim=1))
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
-
-        # update the average reward
-        with torch.no_grad():
-            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action[0], False)
-            av_q_values = self.online_net(next_states, False,
-                                       torch.cat([next_nei_policy_out[:, 0:int((neighbor_action[0].size(1) - 1) / 2)],
-                                                  actions[1].unsqueeze(1),
-                                                  next_nei_policy_out[:, int((neighbor_action[0].size(1) + 1) / 2)::]],
-                                       dim=1))
-            av_q_values = returns.unsqueeze(1) + self.discount * nonterminals * av_q_values
 
         (value_loss + policy_loss).backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
 
         self.average_reward = self.average_reward + \
-                              self.reward_update_rate * torch.mean(av_q_values.detach() - q_batch.detach())
+                              self.reward_update_rate * torch.mean(target_q_batch.detach() - q_batch.detach())
         self.average_reward = self.average_reward.detach()
         if self.average_reward <= -1:
             self.average_reward = -1  # do some crop

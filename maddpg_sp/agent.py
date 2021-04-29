@@ -167,26 +167,33 @@ class Agent:
         return zeros[..., 0:num_classes]
 
     def blind_neighbor_observation(self, state, neighbor_action, target=True):
-        with torch.no_grad():
-            pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
-            one_side_length = int((state.size(-1) - 1) / 2)
+        pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
+        one_side_length = int((state.size(-1) - 1) / 2)
 
-            state_pad = torch.nn.functional.pad(state, (one_side_length, one_side_length, one_side_length, one_side_length),
-                                                "constant", 0)
+        state_pad = torch.nn.functional.pad(state, (one_side_length, one_side_length, one_side_length, one_side_length),
+                                            "constant", 0)
 
-            returns = torch.zeros(*neighbor_action.size(), self.action_space, dtype=torch.float32)
-            neighbor_ind = torch.where(state_pad[-1, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
-            neib_ind = 0
-            for ap_index, aps_act in enumerate(neighbor_action[-1]):
-                if aps_act == -1:
-                    returns[:, ap_index] = 0
+        returns = torch.zeros(*neighbor_action.size(), self.action_space, dtype=torch.float32, requires_grad=True)
+        neighbor_ind = torch.where(state_pad[-1, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
+        neib_ind = 0
+        for ap_index, aps_act in enumerate(neighbor_action[-1]):
+            if aps_act == -1:
+                returns[:, ap_index] = 0
+            else:
+                a = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                b = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                c = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                d = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
+                neib_ind += 1
+                if ap_index != 3:
+                # do not do gradent for actions besides itself
+                # #TODO: when change hex or etc. remember to change this value
+                    if target:
+                        returns[:, ap_index] = self.target_net(corp_state).detach()
+                    else:
+                        returns[:, ap_index] = self.online_net(corp_state).detach()
                 else:
-                    a = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
-                    b = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
-                    c = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
-                    d = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
-                    corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
-                    neib_ind += 1
                     if target:
                         returns[:, ap_index] = self.target_net(corp_state)
                     else:

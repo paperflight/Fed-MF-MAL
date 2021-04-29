@@ -619,7 +619,7 @@ if __name__ == "__main__":
         sinr, action, aa = x.test_sinr('random')
         adj_ind = np.where(aa != 12)[0]
         action[adj_ind] = aa[adj_ind]
-        res = x.decentralized_reward_directional(sinr, action)
+        res = x.decentralized_reward_directional(sinr, aa)
         sinr = np.log2(sinr + 1)
         res_avg += res
         mean_sinr += np.mean(sinr)
@@ -630,10 +630,10 @@ if __name__ == "__main__":
     res_avg1 = np.zeros(20)
     mean_sinr = 0
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('fixed')
+        sinr, action, aa = x.test_sinr('updown')
         adj_ind = np.where(aa != 12)[0]
         action[adj_ind] = aa[adj_ind]
-        res = x.decentralized_reward_directional(sinr, action)
+        res = x.decentralized_reward_directional(sinr, aa)
         sinr = np.log2(sinr + 1)
         mean_sinr += np.mean(sinr)
         res_avg1 += res

@@ -316,9 +316,7 @@ class Decentralized_Game:
             action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        adj_ind = np.where(actual_action != 12)[0]
-        action_re[adj_ind] = actual_action[adj_ind]
-        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), action_re)
+        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
@@ -329,7 +327,7 @@ class Decentralized_Game:
             #                           self.environment.coop_graph.hand_shake_result,
             #                           self.environment.user_position)
 
-        return ap_state, action, avil_action, \
+        return ap_state, action_re, avil_action, \
                [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def step_p(self, accesspoint=None):
@@ -362,14 +360,12 @@ class Decentralized_Game:
             action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        adj_ind = np.where(actual_action != 12)[0]
-        action_re[adj_ind] = actual_action[adj_ind]
-        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), action_re)
+        reward = self.environment.decentralized_reward_directional(self.environment.sinr_calculation(), actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
-        return ap_state, action, avil_action, \
+        return ap_state, action_re, avil_action, \
                [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def close(self):

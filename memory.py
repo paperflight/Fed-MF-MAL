@@ -182,6 +182,10 @@ class ReplayMemory:
         action = torch.tensor(np.copy(transitions['action'][:, self.history - 1]), dtype=torch.int64, device=self.device)
         nei_action = torch.tensor(np.copy(transitions['neighbor_action'][:, self.history - 1]),
                                   dtype=torch.int64, device=self.device)
+        next_action = torch.tensor(np.copy(transitions['action'][:, self.n : self.n + self.history]), dtype=torch.int64,
+                                   device=self.device)
+        next_nei_action = torch.tensor(np.copy(transitions['neighbor_action'][:, self.n : self.n + self.history]),
+                                               dtype=torch.int64, device=self.device)
         glob_action = torch.tensor(np.copy(transitions['global_action'][:, self.history - 1]),
                                    dtype=torch.int64, device=self.device)
         avail = torch.tensor(np.copy(transitions['avail'][:, self.history - 1]), dtype=torch.bool, device=self.device)
@@ -193,7 +197,7 @@ class ReplayMemory:
             np.expand_dims(transitions['nonterminal'][:, self.history + self.n - 1], axis=1),
             dtype=torch.float32, device=self.device)
 
-        return probs, idxs, tree_idxs, state, action, nei_action, \
+        return probs, idxs, tree_idxs, state, (action, next_action), (nei_action, next_nei_action), \
                glob_action, avail, R, next_state, nonterminal
 
     def sample(self, batch_size, avg=0):

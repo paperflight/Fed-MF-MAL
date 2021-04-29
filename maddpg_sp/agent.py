@@ -167,29 +167,30 @@ class Agent:
         return zeros[..., 0:num_classes]
 
     def blind_neighbor_observation(self, state, neighbor_action, target=True):
-        pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
-        one_side_length = int((state.size(-1) - 1) / 2)
+        with torch.no_grad():
+            pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
+            one_side_length = int((state.size(-1) - 1) / 2)
 
-        state_pad = torch.nn.functional.pad(state, (one_side_length, one_side_length, one_side_length, one_side_length),
-                                            "constant", 0)
+            state_pad = torch.nn.functional.pad(state, (one_side_length, one_side_length, one_side_length, one_side_length),
+                                                "constant", 0)
 
-        returns = torch.zeros(*neighbor_action.size(), self.action_space, dtype=torch.float32)
-        neighbor_ind = torch.where(state_pad[-1, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
-        neib_ind = 0
-        for ap_index, aps_act in enumerate(neighbor_action[-1]):
-            if aps_act == -1:
-                returns[:, ap_index] = 0
-            else:
-                a = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
-                b = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
-                c = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
-                d = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
-                corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
-                neib_ind += 1
-                if target:
-                    returns[:, ap_index] = self.target_net(corp_state)
+            returns = torch.zeros(*neighbor_action.size(), self.action_space, dtype=torch.float32)
+            neighbor_ind = torch.where(state_pad[-1, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
+            neib_ind = 0
+            for ap_index, aps_act in enumerate(neighbor_action[-1]):
+                if aps_act == -1:
+                    returns[:, ap_index] = 0
                 else:
-                    returns[:, ap_index] = self.online_net(corp_state)
+                    a = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                    b = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                    c = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                    d = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                    corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
+                    neib_ind += 1
+                    if target:
+                        returns[:, ap_index] = self.target_net(corp_state)
+                    else:
+                        returns[:, ap_index] = self.online_net(corp_state)
         return returns
 
     def learn(self, mem):
@@ -213,8 +214,6 @@ class Agent:
 
         # Actor update
         policy_loss = -self.online_net(states, False, self.blind_neighbor_observation(states, neighbor_action, False))
-        with torch.no_grad():
-            av_q_values = returns.unsqueeze(1) + self.discount * nonterminals * (-policy_loss)
         curr_policy_out = self.online_net(states)
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
@@ -224,6 +223,10 @@ class Agent:
         self.optimiser.step()
 
         # update the average reward
+        with torch.no_grad():
+            av_q_values = self.online_net(next_states, False,
+                                          self.blind_neighbor_observation(next_states, neighbor_action, False))
+            av_q_values = returns.unsqueeze(1) + self.discount * nonterminals * av_q_values
         self.average_reward = self.average_reward + \
                               self.reward_update_rate * torch.mean(av_q_values.detach() - q_batch.detach())
         self.average_reward = self.average_reward.detach()

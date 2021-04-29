@@ -156,7 +156,8 @@ class Agent:
         return list_pro.any()
 
     @staticmethod
-    def _to_one_hot(y, num_classes):
+    def _to_one_hot(temp, num_classes):
+        y = temp.clone()
         y = torch.as_tensor(y)
         y[y == -1] = num_classes
         scatter_dim = len(y.size())
@@ -173,7 +174,7 @@ class Agent:
                                             "constant", 0)
 
         returns = torch.zeros(*neighbor_action.size(), self.action_space, dtype=torch.float32)
-        neighbor_ind = torch.where(state_pad[0, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
+        neighbor_ind = torch.where(state_pad[-1, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
         neib_ind = 0
         for ap_index, aps_act in enumerate(neighbor_action[-1]):
             if aps_act == -1:

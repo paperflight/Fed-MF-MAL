@@ -106,7 +106,7 @@ class Agent:
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_boltzmann(self, state, avail):  # High ε can reduce evaluation scores drastically
         with torch.no_grad():
-            res_policy = self.online_net(state.unsqueeze(0)).detach()
+            res_policy = self.online_net(self.online_net(state.unsqueeze(0), None)).detach()
             return self.boltzmann(res_policy, [avail])
 
     def boltzmann(self, res_policy, mask):

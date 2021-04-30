@@ -186,7 +186,9 @@ class Agent:
         value_loss = self.mseloss(q_batch, target_q_batch)
 
         # Actor update
-        policy_loss = -self.online_net(states, False, self.online_net(states))
+        curr_pol_out = self.online_net(states)
+        policy_loss = -self.online_net(states, False, curr_pol_out)
+        policy_loss += -(curr_pol_out ** 2).mean() * 1e-3
         policy_loss = policy_loss.mean()
 
         (value_loss + policy_loss).backward()

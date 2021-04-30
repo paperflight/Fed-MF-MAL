@@ -190,9 +190,9 @@ class Agent:
                     corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
                     neib_ind += 1
                     if target:
-                        returns[:, ap_index] = self.target_net(corp_state)
+                        returns[:, ap_index] = self.target_net(self.target_net(corp_state, None))
                     else:
-                        returns[:, ap_index] = self.online_net(corp_state)
+                        returns[:, ap_index] = self.online_net(self.online_net(corp_state, None))
         return returns
 
     def learn(self, mem):
@@ -207,9 +207,10 @@ class Agent:
 
         # Prepare for the target q batch
         with torch.no_grad():
-            next_q_action = self.boltzmann(self.target_net(next_states), avails)
-            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action, False)
-            next_q_values = self.online_net(next_states, False,
+            target_next_states = self.target_net(next_states, None)
+            next_q_action = self.boltzmann(self.target_net(target_next_states), avails)
+            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action)
+            next_q_values = self.target_net(target_next_states, False,
                                        torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                   self._to_one_hot(torch.tensor(next_q_action), self.action_space).unsqueeze(1),
                                                   next_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],

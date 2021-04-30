@@ -216,12 +216,16 @@ class Agent:
                                        dim=1))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
 
-        q_batch = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
+        curr_nei_policy_out = self.blind_neighbor_observation(states, neighbor_action, False)
+        q_batch = self.online_net(states, False,
+                                       torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
+                                                  self._to_one_hot(actions, self.action_space).unsqueeze(1),
+                                                  curr_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
+                                       dim=1))
         value_loss = self.mseloss(q_batch, target_q_batch)
 
         # Actor update
         curr_policy_out = self.online_net(states)
-        curr_nei_policy_out = self.blind_neighbor_observation(states, neighbor_action[0], False)
         policy_loss = -self.online_net(states, False,
                                        torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                   curr_policy_out.unsqueeze(1),

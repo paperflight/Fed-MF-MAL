@@ -208,7 +208,7 @@ class Agent:
         # Prepare for the target q batch
         with torch.no_grad():
             next_q_action = self.boltzmann(self.target_net(next_states), avails)
-            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action)
+            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action, False)
             next_q_values = self.online_net(next_states, False,
                                        torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                   self._to_one_hot(torch.tensor(next_q_action), self.action_space).unsqueeze(1),
@@ -217,7 +217,8 @@ class Agent:
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
 
         curr_nei_policy_out = self.blind_neighbor_observation(states, neighbor_action, False)
-        q_batch = self.online_net(states, False,
+        current_state = self.online_net(states, None)
+        q_batch = self.online_net(current_state, False,
                                        torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                   self._to_one_hot(actions, self.action_space).unsqueeze(1),
                                                   curr_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
@@ -225,8 +226,8 @@ class Agent:
         value_loss = self.mseloss(q_batch, target_q_batch)
 
         # Actor update
-        curr_policy_out = self.online_net(states)
-        policy_loss = -self.online_net(states, False,
+        curr_policy_out = self.online_net(current_state, True)
+        policy_loss = -self.online_net(current_state, False,
                                        torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                   curr_policy_out.unsqueeze(1),
                                                   curr_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],

@@ -176,7 +176,10 @@ class Agent:
 
         # Prepare for the target q batch
         with torch.no_grad():
-            next_q_values = self.online_net(next_states, False, self.online_net(next_states))
+            next_q_values = self.target_net(next_states, False,
+                                            self._to_one_hot(torch.tensor(
+                                                self.boltzmann(self.target_net(next_states), avails)),
+                                                             self.action_space))
             target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
 
         q_batch = self.online_net(states, False, self._to_one_hot(actions, self.action_space))

@@ -75,8 +75,9 @@ class Actor_Critic(nn.Module):
                                        nn.Linear(args.hidden_size, 1))
 
     def forward(self, x, actor_or_critic=True, action=None):
-        x = self.convs(x.float())
-        if actor_or_critic:  # actor run if ture
+        if actor_or_critic is None:
+            return self.convs(x.float())
+        elif actor_or_critic:  # actor run if ture
             return self.actor_end(x.view(x.size(0), -1))
         else:  # critic run if false
             return self.value_end(torch.cat([x.view(x.size(0), -1), torch.reshape(action, (action.size(0), -1))], 1))

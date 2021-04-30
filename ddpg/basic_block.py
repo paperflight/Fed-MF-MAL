@@ -68,7 +68,7 @@ class Actor_Critic(nn.Module):
                                        NoisyLinear(args.hidden_size, args.hidden_size, std_init=args.noisy_std),
                                        nn.LeakyReLU(),
                                        nn.Linear(args.hidden_size, action_space), nn.Tanh())
-        self.value_end = nn.Sequential(NoisyLinear(self.conv_output_size + self.action_space * 7, args.hidden_size,
+        self.value_end = nn.Sequential(NoisyLinear(self.conv_output_size + self.action_space, args.hidden_size,
                                                    std_init=args.noisy_std), nn.LeakyReLU(),
                                        NoisyLinear(args.hidden_size, args.hidden_size, std_init=args.noisy_std),
                                        nn.LeakyReLU(),

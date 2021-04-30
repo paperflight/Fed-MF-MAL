@@ -63,23 +63,26 @@ class Actor_Critic(nn.Module):
             raise TypeError('No such structure or incorrect structure')
         # TODO: Calculate the output_size carefully!!!
 
-        self.fc_end = nn.Sequential(nn.Linear(self.conv_output_size, args.hidden_size), nn.LeakyReLU())
-
-        self.actor_end = nn.Sequential(NoisyLinear(args.hidden_size, args.hidden_size, std_init=args.noisy_std),
+        self.actor_end = nn.Sequential(NoisyLinear(self.conv_output_size, args.hidden_size, std_init=args.noisy_std),
                                        NoisyLinear(args.hidden_size, args.hidden_size, std_init=args.noisy_std),
-                                       nn.Linear(args.hidden_size, action_space), nn.Tanh())
-        self.value_end = nn.Sequential(NoisyLinear(args.hidden_size + self.action_space, args.hidden_size,
+                                       nn.Linear(args.hidden_size, action_space), nn.LeakyReLU())
+        self.value_end = nn.Sequential(NoisyLinear(self.conv_output_size + self.action_space, args.hidden_size,
                                                    std_init=args.noisy_std), nn.LeakyReLU(),
                                        NoisyLinear(args.hidden_size, args.hidden_size, std_init=args.noisy_std),
                                        nn.LeakyReLU(),
-                                       nn.Linear(args.hidden_size, 1))
+                                       nn.Linear(args.hidden_size, self.atoms))
 
-    def forward(self, x, actor_or_critic=True, action=None):
-        x = self.fc_end(self.convs(x.float()).view(x.size(0), -1))
+    def forward(self, x, actor_or_critic=True, action=None, log=False):
+        x = self.convs(x.float()).view(x.size(0), -1)
         if actor_or_critic:  # actor run if ture
             return self.actor_end(x)
         else:  # critic run if false
-            return self.value_end(torch.cat([x, torch.reshape(action, (action.size(0), -1))], 1))
+            v = self.value_end(torch.cat([x, torch.reshape(action, (action.size(0), -1))], 1))
+            if log:  # Use log softmax for numerical stability
+                v = F.log_softmax(v, dim=-1)  # Log probabilities with action over second dimension
+            else:
+                v = F.softmax(v, dim=-1)  # Probabilities with action over second dimension
+            return v
 
     def reset_noise(self):
         for name, module in self.named_children():

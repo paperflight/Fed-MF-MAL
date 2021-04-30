@@ -208,8 +208,8 @@ class Agent:
         # Prepare for the target q batch
         with torch.no_grad():
             target_next_states = self.target_net(next_states, None)
-            next_q_action = self.boltzmann(self.target_net(target_next_states), avails)
-            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action)
+            next_q_action = self.boltzmann(self.online_net(self.online_net(next_states, None)), avails)
+            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action, False)
             next_q_values = self.target_net(target_next_states, False,
                                        torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                   self._to_one_hot(torch.tensor(next_q_action), self.action_space).unsqueeze(1),

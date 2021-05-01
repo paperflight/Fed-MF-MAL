@@ -19,6 +19,7 @@ class Agent:
     def __init__(self, args, env, index):
         self.action_space = env.get_action_size()
         self.atoms = args.atoms
+        self.support = torch.linspace(args.V_min, args.V_max, self.atoms).to(device=args.device)  # Support (range) of z
         self.action_type = args.action_selection
         self.Vmin = args.V_min
         self.Vmax = args.V_max
@@ -106,7 +107,7 @@ class Agent:
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_boltzmann(self, state, avail):  # High ε can reduce evaluation scores drastically
         with torch.no_grad():
-            res_policy = self.online_net(self.online_net(state.unsqueeze(0), None)).detach()
+            res_policy = self.online_net(state.unsqueeze(0)).detach()
             return self.boltzmann(res_policy, [avail])
 
     def boltzmann(self, res_policy, mask):
@@ -116,7 +117,11 @@ class Agent:
         for i in range(sizeofres[0]):
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
-            action_probs = np.array([x / count for x in action_probs])
+            if count == 0:
+                action_probs = np.array([1 / np.sum(mask[i].numpy()) if _ else 0 for _ in mask[i]])
+                print('Zero probs, random action')
+            else:
+                action_probs = np.array([x / count for x in action_probs])
             res.append(np.random.choice(self.action_space, p=action_probs))
         if sizeofres[0] == 1:
             return res[0]
@@ -190,9 +195,9 @@ class Agent:
                     corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
                     neib_ind += 1
                     if target:
-                        returns[:, ap_index] = self.target_net(self.target_net(corp_state, None))
+                        returns[:, ap_index] = self.target_net(corp_state)
                     else:
-                        returns[:, ap_index] = self.online_net(self.online_net(corp_state, None))
+                        returns[:, ap_index] = self.online_net(corp_state)
         return returns
 
     def learn(self, mem):
@@ -205,46 +210,73 @@ class Agent:
         # critic update
         self.optimiser.zero_grad()
 
-        # Prepare for the target q batch
-        with torch.no_grad():
-            target_next_states = self.target_net(next_states, None)
-            next_q_action = self.boltzmann(self.online_net(self.online_net(next_states, None)), avails)
-            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action, False)
-            next_q_values = self.target_net(target_next_states, False,
-                                       torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
-                                                  self._to_one_hot(torch.tensor(next_q_action), self.action_space).unsqueeze(1),
-                                                  next_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
-                                       dim=1))
-            target_q_batch = returns.unsqueeze(1) + self.discount * nonterminals * next_q_values
+        # Calculate current state probabilities (online network noise already sampled)
+        log_ps_a = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space), log=True)
+        # Log probabilities log p(s_t, ·; θonline)
 
-        curr_nei_policy_out = self.blind_neighbor_observation(states, neighbor_action, False)
-        current_state = self.online_net(states, None)
-        q_batch = self.online_net(current_state, False,
-                                       torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
-                                                  self._to_one_hot(actions, self.action_space).unsqueeze(1),
-                                                  curr_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
-                                       dim=1))
-        value_loss = self.mseloss(q_batch, target_q_batch)
+        with torch.no_grad():
+            # Calculate nth next state probabilities
+            dns = self.online_net(next_states)  # Probabilities p(s_t+n, ·; θonline)
+            if self.action_type == 'greedy':
+                dns = dns * avails
+                for ind, avail in enumerate(avails):
+                    if not (avail == 0).all():
+                        dns[ind, avail == 0] = (torch.min(dns[ind]) - 10)
+                argmax_indices_ns = dns.argmax(1)
+                # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
+            elif self.action_type == 'boltzmann':
+                argmax_indices_ns = self.boltzmann(dns, avails)
+            elif self.action_type == 'no_limit':
+                argmax_indices_ns = dns.argmax(1)
+            self.target_net.reset_noise()  # Sample new target net noise
+            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action, False)
+            pns_a = self.target_net(next_states, False,
+                                            torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
+                                                       self._to_one_hot(torch.tensor(argmax_indices_ns),
+                                                                        self.action_space).unsqueeze(1),
+                                                       next_nei_policy_out[:,
+                                                       int((neighbor_action.size(1) + 1) / 2)::]],
+                                                      dim=1))
+            # Probabilities p(s_t+n, ·; θtarget)
+            # Double-Q probabilities p(s_t+n, argmax_a[(z, p(s_t+n, a; θonline))]; θtarget)
+
+            # Compute Tz (Bellman operator T applied to z)
+            Tz = returns.unsqueeze(1) + nonterminals * (self.discount ** self.n) * self.support.unsqueeze(0)
+            # Tz = R^n + (γ^n)z (accounting for terminal states)
+            Tz = Tz.clamp(min=self.Vmin, max=self.Vmax)  # Clamp between supported values
+            # Compute L2 projection of Tz onto fixed support z
+            b = (Tz - self.Vmin) / self.delta_z  # b = (Tz - Vmin) / Δz
+            l, u = b.floor().long(), b.ceil().long()
+            # Fix disappearing probability mass when l = b = u (b is int)
+            l[(u > 0) * (l == u)] -= 1
+            u[(l < (self.atoms - 1)) * (l == u)] += 1
+
+            # Distribute probability of Tz
+            m = states.new_zeros(self.batch_size, self.atoms)
+            offset = torch.linspace(0, ((self.batch_size - 1) * self.atoms), self.batch_size).unsqueeze(1).expand(
+                self.batch_size, self.atoms).to(actions)
+            m.view(-1).index_add_(0, (l + offset).view(-1), (pns_a * (u.float() - b)).view(-1))
+            # m_l = m_l + p(s_t+n, a*)(u - b)
+            m.view(-1).index_add_(0, (u + offset).view(-1), (pns_a * (b - l.float())).view(-1))
+            # m_u = m_u + p(s_t+n, a*)(b - l)
+
+            # update the average reward
+            ps_a = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
+            self.average_reward = self.average_reward + \
+                                  self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
+                                                                       torch.sum(pns_a * self.support, dim=1) -
+                                                                       torch.sum(ps_a * self.support, dim=1))
+
+        value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
 
         # Actor update
-        curr_policy_out = self.online_net(current_state, True)
-        policy_loss = -self.online_net(current_state, False,
-                                       torch.cat([curr_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
-                                                  curr_policy_out.unsqueeze(1),
-                                                  curr_nei_policy_out[:, int((neighbor_action.size(1) + 1) / 2)::]],
-                                       dim=1))
+        policy_loss = -self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
         policy_loss = policy_loss.mean()
-        policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
+        policy_loss += -(self.online_net(states) ** 2).mean() * 1e-3
 
         ((weights * value_loss).mean() + policy_loss).backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
-
-        self.average_reward = self.average_reward + \
-                              self.reward_update_rate * torch.mean(target_q_batch.detach() - q_batch.detach())
-        self.average_reward = self.average_reward.detach()
-        if self.average_reward <= -1:
-            self.average_reward = -1  # do some crop
 
         mem.update_priorities(idxs, value_loss.detach().cpu().numpy())  # Update priorities of sampled transitions
 
@@ -265,7 +297,7 @@ class Agent:
     # Evaluates Q-value based on single state (no batch)
     def evaluate_q(self, state):
         with torch.no_grad():
-            return (self.online_net(self.online_net(state.unsqueeze(0), None))).max(1)[0].item()
+            return (self.online_net(state.unsqueeze(0))).max(1)[0].item()
 
     def train(self):
         self.online_net.train()

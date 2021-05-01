@@ -236,7 +236,7 @@ class Agent:
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
 
-        (weights * value_loss + policy_loss).backward()
+        ((weights * value_loss).mean() + policy_loss).backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
 

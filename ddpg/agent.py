@@ -231,7 +231,6 @@ class Agent:
                                                                        torch.sum(ps_a * self.support, dim=1))
 
         value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
-        value_loss = value_loss.mean()
 
         # Actor update
         curr_pol_out = self.online_net(states)
@@ -239,7 +238,7 @@ class Agent:
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_pol_out ** 2).mean() * 1e-3
 
-        loss = weights * value_loss + policy_loss
+        loss = (weights * value_loss).mean() + policy_loss
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)

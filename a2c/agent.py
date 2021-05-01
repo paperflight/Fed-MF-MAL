@@ -8,10 +8,7 @@ from scipy.special import softmax as softmax_sci
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
-from ddpg.basic_block import Actor_Critic
-
-
-# TODO: maddpg learns fast, set a small target network update rate or remove target nework for non-episodic cases
+from a2c.basic_block import DQN
 
 
 class Agent:
@@ -21,8 +18,8 @@ class Agent:
         self.action_type = args.action_selection
         self.Vmin = args.V_min
         self.Vmax = args.V_max
-        self.delta_z = (args.V_max - args.V_min) / (self.atoms - 1)
         self.support = torch.linspace(args.V_min, args.V_max, self.atoms).to(device=args.device)  # Support (range) of z
+        self.delta_z = (args.V_max - args.V_min) / (self.atoms - 1)
         self.batch_size = args.batch_size
         self.n = args.multi_step
         self.discount = args.discount
@@ -31,12 +28,18 @@ class Agent:
         self.reward_update_rate = args.reward_update_rate
         self.average_reward = 0
 
-        self.online_net = Actor_Critic(args, self.action_space).to(device=args.device)
+        self.online_net = DQN(args, self.action_space).to(device=args.device)
         if args.model:  # Load pretrained model if provided
             self.model_path = os.path.join(args.model, "model" + str(index) + ".pth")
             if os.path.isfile(self.model_path):
                 state_dict = torch.load(self.model_path, map_location='cpu')
                 # Always load tensors onto CPU by default, will shift to GPU if necessary
+                # if 'conv1.weight' in state_dict.keys():
+                #     for old_key, new_key in (('conv1.weight', 'convs.0.weight'), ('conv1.bias', 'convs.0.bias'),
+                #                              ('conv2.weight', 'convs.2.weight'), ('conv2.bias', 'convs.2.bias'),
+                #                              ('conv3.weight', 'convs.4.weight'), ('conv3.bias', 'convs.4.bias')):
+                #         state_dict[new_key] = state_dict[old_key]  # Re-map state dict for old pretrained models
+                #         del state_dict[old_key]  # Delete old keys for strict load_state_dict
                 self.online_net.load_state_dict(state_dict)
                 print("Loading pretrained model: " + self.model_path)
             else:  # Raise error if incorrect model path provided
@@ -44,7 +47,7 @@ class Agent:
 
         self.online_net.train()
 
-        self.target_net = Actor_Critic(args, self.action_space).to(device=args.device)
+        self.target_net = DQN(args, self.action_space).to(device=args.device)
 
         self.online_dict = self.online_net.state_dict()
         self.target_dict = self.target_net.state_dict()
@@ -55,7 +58,6 @@ class Agent:
             param.requires_grad = False
 
         self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.learning_rate, eps=args.adam_eps)
-        self.mseloss = torch.nn.MSELoss()
 
     def reload_step_state_dict(self, better=True):
         if better:
@@ -87,8 +89,8 @@ class Agent:
     def act(self, state, avail=None):
         with torch.no_grad():
             if avail is None:
-                return self.online_net(state.unsqueeze(0)).argmax(1).item()
-            temp = self.online_net(state.unsqueeze(0)) * torch.tensor(avail)
+                return (self.online_net(state.unsqueeze(0)) * self.support).sum(2).argmax(1).item()
+            temp = (self.online_net(state.unsqueeze(0)) * self.support).sum(2) * torch.tensor(avail)
             temp[:, avail == 0] = (torch.min(temp) - 100)
             return temp.argmax(1).item()
 
@@ -110,7 +112,7 @@ class Agent:
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
         res = []
-        res_policy = softmax_sci(res_policy.numpy(), axis=1)
+        res_policy = res_policy.numpy()
         for i in range(sizeofres[0]):
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
@@ -173,14 +175,14 @@ class Agent:
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, neighbor_action, _, avails, returns, next_states, nonterminals, weights = \
+        idxs, states, actions, _, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
 
         # critic update
         self.optimiser.zero_grad()
 
         # Calculate current state probabilities (online network noise already sampled)
-        log_ps_a = self.online_net(states, False, self._to_one_hot(actions, self.action_space), log=True)
+        log_ps_a = self.online_net(states, False, log=True)
         # Log probabilities log p(s_t, ·; θonline)
 
         with torch.no_grad():
@@ -198,8 +200,7 @@ class Agent:
             elif self.action_type == 'no_limit':
                 argmax_indices_ns = dns.argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise
-            pns_a = self.target_net(next_states, False,
-                                  self._to_one_hot(argmax_indices_ns, self.action_space))
+            pns_a = self.target_net(next_states, False)
             # Probabilities p(s_t+n, ·; θtarget)
             # Double-Q probabilities p(s_t+n, argmax_a[(z, p(s_t+n, a; θonline))]; θtarget)
 
@@ -224,7 +225,7 @@ class Agent:
             # m_u = m_u + p(s_t+n, a*)(b - l)
 
             # update the average reward
-            ps_a = self.online_net(states, False, self._to_one_hot(actions, self.action_space))
+            ps_a = self.online_net(states, False)
             self.average_reward = self.average_reward + \
                                   self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
                                                                        torch.sum(pns_a * self.support, dim=1) -
@@ -234,25 +235,20 @@ class Agent:
         value_loss = value_loss.mean()
 
         # Actor update
-        curr_pol_out = self.online_net(states)
-        policy_loss = -self.online_net(states, False, curr_pol_out) * self.support
+        curr_pol_out = self.online_net(states, log=True)
+        policy_loss = - curr_pol_out.gather(-1, actions.unsqueeze(1)) * \
+                      (returns.unsqueeze(1) - self.online_net(states, False) * self.support)
+        # log probs * advantage
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_pol_out ** 2).mean() * 1e-3
 
-        loss = weights * value_loss + policy_loss
+        entropy_loss = (self.online_net(states, log=True) * self.online_net(states, log=False)).mean()
+
+        loss = weights * value_loss + policy_loss + entropy_loss
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
-
-        # print(value_loss, policy_loss)
-
-        # # update the average reward
-        # self.average_reward = self.average_reward + \
-        #                       self.reward_update_rate * torch.mean(target_q_batch.detach() - q_batch.detach())
-        # self.average_reward = self.average_reward.detach()
-        if self.average_reward <= -1:
-            self.average_reward = -1  # do some crop
 
         mem.update_priorities(idxs, value_loss.detach().cpu().numpy())  # Update priorities of sampled transitions
 
@@ -261,7 +257,9 @@ class Agent:
 
     def soft_update_target_net(self, tau):
         for target_param, param in zip(self.target_net.parameters(), self.online_net.parameters()):
-            target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
+            target_param.data.copy_(
+                target_param.data * (1.0 - tau) + param.data * tau
+            )
 
     # Save model parameters on current device (don't move model between devices)
     def save(self, path, index=-1, name='model.pth'):
@@ -273,7 +271,7 @@ class Agent:
     # Evaluates Q-value based on single state (no batch)
     def evaluate_q(self, state):
         with torch.no_grad():
-            return (self.online_net(state.unsqueeze(0))).max(1)[0].item()
+            return (self.online_net(state.unsqueeze(0), False) * self.support).sum(-1).item()
 
     def train(self):
         self.online_net.train()

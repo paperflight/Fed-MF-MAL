@@ -164,7 +164,7 @@ class Agent:
         y[y == -1] = num_classes
         scatter_dim = len(y.size())
         y_tensor = y.view(*y.size(), -1)
-        zeros = torch.zeros(*y.size(), num_classes + 1, dtype=y.dtype)
+        zeros = torch.zeros(*y.size(), num_classes + 1, dtype=torch.float32)
         zeros = zeros.scatter(scatter_dim, y_tensor, 1)
         return zeros[..., 0:num_classes]
 
@@ -236,7 +236,7 @@ class Agent:
         policy_loss = policy_loss.mean()
         policy_loss += -(curr_policy_out ** 2).mean() * 1e-3
 
-        (value_loss + policy_loss).backward()
+        (weights * value_loss + policy_loss).backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
 

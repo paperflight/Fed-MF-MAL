@@ -415,15 +415,31 @@ class Channel:
                                                              axis=1))), axis=1), "SINR_DISTANCE", gp.UE_COLOR)
         return sinr, action, actual_action
 
+    def centralized_reward(self, sinr):
+        sinr_clip = np.log2(sinr + 1)
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        temp_qos = cp.copy(self.user_qos)
+        temp_qos[:, 0] -= sinr_clip
+        temp_qos[:, 1] -= 1
+        rest = np.all(temp_qos > 0, axis=1)
+        gain = np.logical_and(temp_qos[:, 0] <= 0, temp_qos[:, 1] >= 0)
+        dump = np.logical_and(temp_qos[:, 0] > 0, temp_qos[:, 1] < 0)
+
+        sinr_clip[gain] += temp_qos[gain, 0]
+
+        return np.sum(sinr)
+
     def decentralized_reward_moving(self, sinr, aa):
-        sinr = np.log2(sinr + 1)
-        self.user_qos[:, 0] -= sinr
+        sinr_clip = np.log2(sinr + 1)
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        self.user_qos[:, 0] -= sinr_clip
         self.user_qos[:, 1] -= 1
         rest = np.all(self.user_qos > 0, axis=1)
         gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
         dump = np.logical_and(self.user_qos[:, 0] > 0, self.user_qos[:, 1] < 0)
 
-        sinr_clip = sinr
+        sinr_clip[gain] += self.user_qos[gain, 0]
+
         sinr_clip[sinr_clip > gp.USER_QOS] = 1
         ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
                               - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
@@ -617,12 +633,10 @@ if __name__ == "__main__":
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
-        adj_ind = np.where(aa != 12)[0]
-        action[adj_ind] = aa[adj_ind]
-        res = x.decentralized_reward_directional(sinr, aa)
+        mean_sinr += x.centralized_reward(sinr)
+        res = x.decentralized_reward_exclude_central(sinr, aa)
         sinr = np.log2(sinr + 1)
         res_avg += res
-        mean_sinr += np.mean(sinr)
         # if _% 100 == 0:
         #     tracker.print_diff()
     res_avg /= 1000
@@ -631,11 +645,9 @@ if __name__ == "__main__":
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')
-        adj_ind = np.where(aa != 12)[0]
-        action[adj_ind] = aa[adj_ind]
-        res = x.decentralized_reward_directional(sinr, aa)
+        mean_sinr += x.centralized_reward(sinr)
+        res = x.decentralized_reward_exclude_central(sinr, aa)
         sinr = np.log2(sinr + 1)
-        mean_sinr += np.mean(sinr)
         res_avg1 += res
     res_avg1 /= 1000
     print(res_avg1, mean_sinr)

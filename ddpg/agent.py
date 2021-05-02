@@ -30,6 +30,7 @@ class Agent:
         self.net_type = args.architecture
         self.reward_update_rate = args.reward_update_rate
         self.average_reward = 0
+        self.neighbor_indice = np.zeros([])
 
         self.online_net = Actor_Critic(args, self.action_space).to(device=args.device)
         if args.model:  # Load pretrained model if provided
@@ -56,6 +57,9 @@ class Agent:
 
         self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.learning_rate, eps=args.adam_eps)
         self.mseloss = torch.nn.MSELoss()
+
+    def update_neighbor_indice(self, neighbor_indices):
+        self.neighbor_indice = neighbor_indices
 
     def reload_step_state_dict(self, better=True):
         if better:
@@ -115,7 +119,7 @@ class Agent:
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
             if count == 0:
-                action_probs = np.array([1 / np.sum(mask[i].numpy()) if _ else 0 for _ in mask[i]])
+                action_probs = np.array([1 / np.sum(mask[i]) if _ else 0 for _ in mask[i]])
                 print('Zero probs, random action')
             else:
                 action_probs = np.array([x / count for x in action_probs])
@@ -194,7 +198,7 @@ class Agent:
                 argmax_indices_ns = dns.argmax(1)
                 # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
             elif self.action_type == 'boltzmann':
-                argmax_indices_ns = self.boltzmann(dns, avails)
+                argmax_indices_ns = self.boltzmann(dns, avails.numpy())
             elif self.action_type == 'no_limit':
                 argmax_indices_ns = dns.argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise
@@ -253,7 +257,7 @@ class Agent:
         if self.average_reward <= -1:
             self.average_reward = -1  # do some crop
 
-        mem.update_priorities(idxs, value_loss.detach().cpu().numpy())  # Update priorities of sampled transitions
+        mem.update_priorities(idxs[0], value_loss.detach().cpu().numpy())  # Update priorities of sampled transitions
 
     def update_target_net(self):
         self.target_net.load_state_dict(self.online_net.state_dict())

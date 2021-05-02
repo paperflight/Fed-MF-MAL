@@ -196,6 +196,19 @@ class ReplayMemory:
         return probs, idxs, tree_idxs, state, action, nei_action, \
                glob_action, avail, R, next_state, nonterminal
 
+    def get_relate_sample(self, batch_size, idxs):
+        transitions = self._get_transitions(idxs)
+        all_state = transitions['state']
+        next_state = torch.tensor(all_state[:, self.n : self.n + self.history],
+                                  device=self.device, dtype=torch.float32).div_(scale_factor)
+        next_state = torch.reshape(next_state, (batch_size, -1, next_state.shape[-2], next_state.shape[-1]))
+        next_state[:, 0::gp.OBSERVATION_DIMS] = torch.round((next_state[:, 0::gp.OBSERVATION_DIMS] - 0.5) * 2)
+        if not self.current_action_obs:
+            next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :] = \
+                self.remove_function(next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :])
+        avail = torch.tensor(np.copy(transitions['avail'][:, self.history - 1]), dtype=torch.bool, device=self.device)
+        return next_state, avail
+
     def sample(self, batch_size, avg=0):
         p_total = self.transitions.total()
         # Retrieve sum of all priorities (used to create a normalised probability distribution)
@@ -206,7 +219,7 @@ class ReplayMemory:
         weights = (capacity * probs) ** -self.priority_weight  # Compute importance-sampling weights w
         weights = torch.tensor(weights / weights.max(), dtype=torch.float32,
                                device=self.device)  # Normalise by max importance-sampling weight from batch
-        return tree_idxs, states, actions, nei_action, glob_action, avail, returns, next_states, nonterminals, weights
+        return (tree_idxs, idxs), states, actions, nei_action, glob_action, avail, returns, next_states, nonterminals, weights
 
     def update_priorities(self, idxs, priorities):
         priorities = np.power(priorities, self.priority_exponent)

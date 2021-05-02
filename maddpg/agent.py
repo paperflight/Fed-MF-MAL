@@ -7,18 +7,22 @@ from torch import optim
 from scipy.special import softmax as softmax_sci
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
+import math
 
-from rainbow.basic_block import DQN
+from maddpg_sp.basic_block import Actor_Critic
+
+
+# TODO: maddpg learns fast, set a small target network update rate or remove target nework for non-episodic cases
 
 
 class Agent:
     def __init__(self, args, env, index):
         self.action_space = env.get_action_size()
         self.atoms = args.atoms
+        self.support = torch.linspace(args.V_min, args.V_max, self.atoms).to(device=args.device)  # Support (range) of z
         self.action_type = args.action_selection
         self.Vmin = args.V_min
         self.Vmax = args.V_max
-        self.support = torch.linspace(args.V_min, args.V_max, self.atoms).to(device=args.device)  # Support (range) of z
         self.delta_z = (args.V_max - args.V_min) / (self.atoms - 1)
         self.batch_size = args.batch_size
         self.n = args.multi_step
@@ -27,20 +31,17 @@ class Agent:
         self.net_type = args.architecture
         self.reward_update_rate = args.reward_update_rate
         self.average_reward = 0
+        self.index = index
+        self.sister_aps_list = []
+        self.sister_mem_list = []
         self.neighbor_indice = np.zeros([])
 
-        self.online_net = DQN(args, self.action_space).to(device=args.device)
+        self.online_net = Actor_Critic(args, self.action_space).to(device=args.device)
         if args.model:  # Load pretrained model if provided
             self.model_path = os.path.join(args.model, "model" + str(index) + ".pth")
             if os.path.isfile(self.model_path):
                 state_dict = torch.load(self.model_path, map_location='cpu')
                 # Always load tensors onto CPU by default, will shift to GPU if necessary
-                # if 'conv1.weight' in state_dict.keys():
-                #     for old_key, new_key in (('conv1.weight', 'convs.0.weight'), ('conv1.bias', 'convs.0.bias'),
-                #                              ('conv2.weight', 'convs.2.weight'), ('conv2.bias', 'convs.2.bias'),
-                #                              ('conv3.weight', 'convs.4.weight'), ('conv3.bias', 'convs.4.bias')):
-                #         state_dict[new_key] = state_dict[old_key]  # Re-map state dict for old pretrained models
-                #         del state_dict[old_key]  # Delete old keys for strict load_state_dict
                 self.online_net.load_state_dict(state_dict)
                 print("Loading pretrained model: " + self.model_path)
             else:  # Raise error if incorrect model path provided
@@ -48,7 +49,7 @@ class Agent:
 
         self.online_net.train()
 
-        self.target_net = DQN(args, self.action_space).to(device=args.device)
+        self.target_net = Actor_Critic(args, self.action_space).to(device=args.device)
 
         self.online_dict = self.online_net.state_dict()
         self.target_dict = self.target_net.state_dict()
@@ -59,6 +60,11 @@ class Agent:
             param.requires_grad = False
 
         self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.learning_rate, eps=args.adam_eps)
+        self.mseloss = torch.nn.MSELoss()
+
+    def assign_sister_nodes(self, model, mem):
+        self.sister_aps_list = model
+        self.sister_mem_list = mem
 
     def update_neighbor_indice(self, neighbor_indices):
         self.neighbor_indice = neighbor_indices
@@ -93,15 +99,17 @@ class Agent:
     def act(self, state, avail=None):
         with torch.no_grad():
             if avail is None:
-                return (self.online_net(state.unsqueeze(0)) * self.support).sum(2).argmax(1).item()
-            temp = (self.online_net(state.unsqueeze(0)) * self.support).sum(2) * torch.tensor(avail)
+                return self.online_net(state.unsqueeze(0)).argmax(1).item()
+            temp = self.online_net(state.unsqueeze(0)) * torch.tensor(avail)
             temp[:, avail == 0] = (torch.min(temp) - 100)
             return temp.argmax(1).item()
 
     # Acts with an ε-greedy policy (used for evaluation only)
-    def act_e_greedy(self, state, available=None, epsilon=0.3, action_type='greedy'):  # High ε can reduce evaluation scores drastically
+    def act_e_greedy(self, state, available=None, epsilon=0.3,
+                     action_type='greedy'):  # High ε can reduce evaluation scores drastically
         if action_type == 'greedy':
-            return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state, available)
+            return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state,
+                                                                                                         available)
         elif action_type == 'boltzmann':
             return self.act_boltzmann(state, available)
         elif action_type == 'no_limit':
@@ -110,7 +118,7 @@ class Agent:
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_boltzmann(self, state, avail):  # High ε can reduce evaluation scores drastically
         with torch.no_grad():
-            res_policy = (self.online_net(state.unsqueeze(0)) * self.support).sum(2).detach()
+            res_policy = self.online_net(state.unsqueeze(0)).detach()
             return self.boltzmann(res_policy, [avail])
 
     def boltzmann(self, res_policy, mask):
@@ -120,7 +128,11 @@ class Agent:
         for i in range(sizeofres[0]):
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
-            action_probs = np.array([x / count for x in action_probs])
+            if count == 0:
+                action_probs = np.array([1 / np.sum(mask[i]) if _ else 0 for _ in mask[i]])
+                print('Zero probs, random action')
+            else:
+                action_probs = np.array([x / count for x in action_probs])
             res.append(np.random.choice(self.action_space, p=action_probs))
         if sizeofres[0] == 1:
             return res[0]
@@ -161,35 +173,88 @@ class Agent:
             # another thread. Keep the gpu resource inside main thread
         return list_pro.any()
 
+    @staticmethod
+    def _to_one_hot(temp, num_classes):
+        y = temp.clone()
+        y = torch.as_tensor(y)
+        y[y == -1] = num_classes
+        scatter_dim = len(y.size())
+        y_tensor = y.view(*y.size(), -1)
+        zeros = torch.zeros(*y.size(), num_classes + 1, dtype=torch.float32)
+        zeros = zeros.scatter(scatter_dim, y_tensor, 1)
+        return zeros[..., 0:num_classes]
+
+    def blind_neighbor_observation(self, state, neighbor_action, target=True):
+        with torch.no_grad():
+            pad_width = math.floor(1 + ((gp.ACCESS_POINTS_FIELD - 1) / 2) / gp.SQUARE_STEP)
+            one_side_length = int((state.size(-1) - 1) / 2)
+
+            state_pad = torch.nn.functional.pad(state, (one_side_length, one_side_length, one_side_length, one_side_length),
+                                                "constant", 0)
+
+            returns = torch.zeros(*neighbor_action.size(), self.action_space, dtype=torch.float32)
+            neighbor_ind = torch.where(state_pad[-1, state.size(-3) - gp.OBSERVATION_DIMS] != 0)
+            neib_ind = 0
+            for ap_index, aps_act in enumerate(neighbor_action[-1]):
+                if aps_act == -1:
+                    returns[:, ap_index] = 0
+                else:
+                    a = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                    b = math.floor(neighbor_ind[0][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                    c = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width - one_side_length
+                    d = math.floor(neighbor_ind[1][neib_ind] / gp.SQUARE_STEP) + pad_width + one_side_length + 1
+                    corp_state = state_pad[:, :, int(a):int(b), int(c):int(d)]
+                    neib_ind += 1
+                    if target:
+                        returns[:, ap_index] = self.target_net(corp_state)
+                    else:
+                        returns[:, ap_index] = self.online_net(corp_state)
+        return returns
+
     def learn(self, mem):
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, _, _, avails, returns, next_states, nonterminals, weights = \
+        idxs, states, actions, neighbor_action, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
+        neigh_mem = []
+        for _ in self.neighbor_indice:
+            if _ != -1:
+                nei_next_states, nei_avails = \
+                    self.sister_mem_list[_].get_relate_sample(self.batch_size, idxs[1])
+                neigh_mem.append((nei_next_states, nei_avails))
+            else:
+                neigh_mem.append(None)
+
+        # critic update
+        self.optimiser.zero_grad()
 
         # Calculate current state probabilities (online network noise already sampled)
-        log_ps = self.online_net(states, log=True)  # Log probabilities log p(s_t, ·; θonline)
-        log_ps_a = log_ps[range(self.batch_size), actions]  # log p(s_t, a_t; θonline)
+        log_ps_a = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space), log=True)
+        # Log probabilities log p(s_t, ·; θonline)
 
         with torch.no_grad():
             # Calculate nth next state probabilities
-            pns = self.online_net(next_states)  # Probabilities p(s_t+n, ·; θonline)
-            dns = self.support.expand_as(pns) * pns  # Distribution d_t+n = (z, p(s_t+n, ·; θonline))
-            if self.action_type == 'greedy':
-                dns = dns.sum(2) * avails
-                for ind, avail in enumerate(avails):
-                    if not (avail == 0).all():
-                        dns[ind, avail == 0] = (torch.min(dns[ind]) - 10)
-                argmax_indices_ns = dns.argmax(1)
-                # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
-            elif self.action_type == 'boltzmann':
-                argmax_indices_ns = self.boltzmann(dns.sum(2), avails)
-            elif self.action_type == 'no_limit':
-                argmax_indices_ns = dns.sum(2).argmax(1)
+            nei_argmax_indices_ns = np.zeros(neighbor_action.size(), dtype=np.int)
+            for nei_i, _ in enumerate(neigh_mem):
+                if _ is not None:
+                    nei_next_state, nei_avails = _
+                    nei_dns = self.online_net(nei_next_state)  # Probabilities p(s_t+n, ·; θonline)
+                    if self.action_type == 'greedy':
+                        nei_dns = nei_dns * nei_avails
+                        for nei_ind, nei_avail in enumerate(nei_avails):
+                            if not (nei_avail == 0).all():
+                                nei_dns[nei_ind, nei_avail == 0] = (torch.min(nei_dns[nei_ind]) - 10)
+                        nei_argmax_indices_ns[:, nei_i] = nei_dns.argmax(1)
+                        # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
+                    elif self.action_type == 'boltzmann':
+                        nei_argmax_indices_ns[:, nei_i] = self.boltzmann(nei_dns, avails.numpy())
+                    elif self.action_type == 'no_limit':
+                        nei_argmax_indices_ns[:, nei_i] = nei_dns.argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise
-            pns = self.target_net(next_states)  # Probabilities p(s_t+n, ·; θtarget)
-            pns_a = pns[range(self.batch_size), argmax_indices_ns]
+            pns_a = self.target_net(next_states, False,
+                                    self._to_one_hot(torch.tensor(nei_argmax_indices_ns), self.action_space))
+            # Probabilities p(s_t+n, ·; θtarget)
             # Double-Q probabilities p(s_t+n, argmax_a[(z, p(s_t+n, a; θonline))]; θtarget)
 
             # Compute Tz (Bellman operator T applied to z)
@@ -213,29 +278,31 @@ class Agent:
             # m_u = m_u + p(s_t+n, a*)(b - l)
 
             # update the average reward
-            ps = self.online_net(states)
-            ps_a = ps[range(self.batch_size), actions]
+            ps_a = self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
             self.average_reward = self.average_reward + \
                                   self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
                                                                        torch.sum(pns_a * self.support, dim=1) -
                                                                        torch.sum(ps_a * self.support, dim=1))
 
-        loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
-        self.online_net.zero_grad()
-        (weights * loss).mean().backward()  # Backpropagate importance-weighted minibatch loss
-        clip_grad_norm_(self.online_net.parameters(), 10.0, norm_type=2)
+        value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
+
+        # Actor update
+        policy_loss = -self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
+        policy_loss = policy_loss.mean()
+        policy_loss += -(self.online_net(states) ** 2).mean() * 1e-3
+
+        ((weights * value_loss).mean() + policy_loss).backward()
+        torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
         self.optimiser.step()
 
-        mem.update_priorities(idxs[0], loss.detach().cpu().numpy())  # Update priorities of sampled transitions
+        mem.update_priorities(idxs[0], value_loss.detach().cpu().numpy())  # Update priorities of sampled transitions
 
     def update_target_net(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
 
     def soft_update_target_net(self, tau):
         for target_param, param in zip(self.target_net.parameters(), self.online_net.parameters()):
-            target_param.data.copy_(
-                target_param.data * (1.0 - tau) + param.data * tau
-            )
+            target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
 
     # Save model parameters on current device (don't move model between devices)
     def save(self, path, index=-1, name='model.pth'):
@@ -247,7 +314,7 @@ class Agent:
     # Evaluates Q-value based on single state (no batch)
     def evaluate_q(self, state):
         with torch.no_grad():
-            return (self.online_net(state.unsqueeze(0)) * self.support).sum(2).max(1)[0].item()
+            return (self.online_net(state.unsqueeze(0))).max(1)[0].item()
 
     def train(self):
         self.online_net.train()

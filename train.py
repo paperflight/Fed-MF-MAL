@@ -103,7 +103,8 @@ parser.add_argument('--render', action='store_false', help='Display screen (test
 parser.add_argument('--enable-cudnn', action='store_true', help='Enable cuDNN (faster but nondeterministic)')
 parser.add_argument('--checkpoint-interval', default=0,
                     help='How often to checkpoint the model, defaults to 0 (never checkpoint)')
-parser.add_argument('--memory', help='Path to save/load the memory from')
+parser.add_argument('--memory', type=str,
+                    help='Path to save/load the memory from')
 parser.add_argument('--disable-bzip-memory', action='store_false',
                     help='Don\'t zip the memory file. Not recommended (zipping is a bit slower and much, much smaller)')
 # TODO: Change federated round each time
@@ -158,7 +159,7 @@ def load_memory(memory_path, disable_bzip):
 
 def save_memory(memory, memory_path, disable_bzip, index=-1):
     # save ap mem
-    memory_path = memory_path[0:-4] + '_aps_' + str(index) + memory_path[-4:]
+    memory_path = memory_path[0:-4] + str(index) + memory_path[-4:]
     if disable_bzip:
         with open(memory_path, 'wb') as pickle_file:
             pickle.dump(memory, pickle_file)
@@ -214,6 +215,15 @@ else:
     mem_aps = []
     for _ in range(env.environment.ap_number):
         mem_aps.append(ReplayMemory(args, args.memory_capacity, env.remove_previous_action))
+
+try:
+    sis_list = dqn[0].assign_sister_nodes
+except AttributeError:
+    pass
+else:
+    for _ in range(env.environment.ap_number):
+        dqn[_].assign_sister_nodes(dqn, mem_aps)
+# assign sister nodes for MADDPG
 
 priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
 
@@ -303,6 +313,7 @@ else:
             neighbor_indice = env.environment.coop_graph.neighbor_indices(_, True)
             action_patch = np.append(action, [-1])
             mem_aps[_].append(state[_], action[_], action_patch[neighbor_indice], action, avail[_], reward[_], done)
+            dqn[_].update_neighbor_indice(neighbor_indice)
             # Append transition to memory
             if args.data_reinforce:
                 # data reinforcement, not applicapable with infinite environment

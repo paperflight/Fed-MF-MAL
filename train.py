@@ -176,11 +176,12 @@ def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode)
     while eps < episode:
         if done:
             done = new_game.reset()
-        state, action, avail, reward, done = new_game.step()  # Step
+        state, action, action_logp, avail, reward, done = new_game.step()  # Step
         for index_p, ele_p in enumerate(state):
             neighbor_indice = new_game.environment.coop_graph.neighbor_indices(index_p, True)
             action_patch = np.append(action, [-1])
-            train_examples_aps[index_p].append((ele_p, action[index_p], action_patch[neighbor_indice],
+            train_examples_aps[index_p].append((ele_p, action[index_p], action_logp[index_p],
+                                                action_patch[neighbor_indice],
                                                 action, avail[index_p], reward[index_p], done))
         eps += 1
     train_history_aps_parallel.append(train_examples_aps)
@@ -236,11 +237,11 @@ if not gp.PARALLEL_EXICUSION:
     while T < args.evaluation_size:
         if done:
             done = env.reset()
-        state, action, avail, reward, done = env.step()
+        state, action, action_logp, avail, reward, done = env.step()
         for index, ele in enumerate(state):
             neighbor_indice = env.environment.coop_graph.neighbor_indices(index, True)
             action_patch = np.append(action, [-1])
-            val_mem_aps[index].append(ele, action[index], action_patch[neighbor_indice],
+            val_mem_aps[index].append(ele, action[index], action_logp[index], action_patch[neighbor_indice],
                                       action, avail[index], reward[index], done)
         T += 1
 else:
@@ -264,8 +265,8 @@ else:
 
         for res in train_history_aps:
             for index, memerys in enumerate(res):
-                for state, a, na, ga, av, rw, done in memerys:
-                    val_mem_aps[index].append(state, a, na, ga, av, rw, done)
+                for state, a, alog, na, ga, av, rw, done in memerys:
+                    val_mem_aps[index].append(state, a, alog, na, ga, av, rw, done)
 
 if args.evaluate:
     for index in range(env.environment.ap_number):
@@ -290,7 +291,8 @@ else:
                 for index, ap_rein in enumerate(reinforce_ap):
                     for ap_pair in ap_rein:
                         for ap_ele in ap_pair:
-                            mem_aps[index].append(ap_ele[0], ap_ele[1], ap_ele[2], ap_ele[3], ap_ele[4], ap_ele[5], ap_ele[6])
+                            mem_aps[index].append(ap_ele[0], ap_ele[1], ap_ele[2], ap_ele[3],
+                                                  ap_ele[4], ap_ele[5], ap_ele[6], ap_ele[7])
             reinforce_ap = []
             for i in range(env.environment.ap_number):
                 temp = []
@@ -303,7 +305,7 @@ else:
             for _ in range(env.environment.ap_number):
                 dqn[_].reset_noise()
 
-        state, action, avail, reward, done = env.step(dqn)
+        state, action, action_logp, avail, reward, done = env.step(dqn)
         epsilon = epsilon - args.epsilon_delta
         epsilon = np.clip(epsilon, a_min=args.epsilon_min, a_max=args.epsilon_max)
 
@@ -312,7 +314,8 @@ else:
                 reward[_] = torch.clamp(reward[_], max=args.reward_clip, min=-args.reward_clip) # Clip rewards
             neighbor_indice = env.environment.coop_graph.neighbor_indices(_, True)
             action_patch = np.append(action, [-1])
-            mem_aps[_].append(state[_], action[_], action_patch[neighbor_indice], action, avail[_], reward[_], done)
+            mem_aps[_].append(state[_], action[_], action_logp[_], action_patch[neighbor_indice],
+                              action, avail[_], reward[_], done)
             dqn[_].update_neighbor_indice(neighbor_indice)
             # Append transition to memory
             if args.data_reinforce:
@@ -320,14 +323,15 @@ else:
                 obs = state[_]
                 obs = torch.rot90(obs, 2, [1, 2])
                 if action[_] != 12 and not reward[_] == 0:
-                    reinforce_ap[_][0].append((obs, env.rot_action(action[_]),
+                    reinforce_ap[_][0].append((obs, env.rot_action(action[_]), action_logp[_],
                                                env.rot_action(action_patch[neighbor_indice]),
                                                env.rot_action(action), env.rot_avail(avail[_]), reward[_], done))
                     reinforce_ap[_][1].append((torch.flip(obs, [1]), env.flip_action(env.rot_action(action))[_],
+                                               action_logp[_],
                                                env.flip_action(env.rot_action(action_patch[neighbor_indice])),
                                                env.flip_action(env.rot_action(action)),
                                                env.flip_avail(env.rot_avail(avail[_])), reward[_], done))
-                    reinforce_ap[_][2].append((torch.flip(state[_], [1]), env.flip_action(action)[_],
+                    reinforce_ap[_][2].append((torch.flip(state[_], [1]), env.flip_action(action)[_], action_logp[_],
                                                env.flip_action(action_patch[neighbor_indice]),
                                                env.flip_action(action), env.flip_avail(avail[_]), reward[_], done))
                     # append rotated observation for data reinforcement

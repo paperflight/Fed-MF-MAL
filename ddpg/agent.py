@@ -177,7 +177,7 @@ class Agent:
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, neighbor_action, _, avails, returns, next_states, nonterminals, weights = \
+        idxs, states, actions, _, neighbor_action, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
 
         # critic update

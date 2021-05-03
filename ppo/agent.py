@@ -8,7 +8,7 @@ from scipy.special import softmax as softmax_sci
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
-from a2c.basic_block import DQN
+from ppo.basic_block import DQN
 
 
 class Agent:
@@ -28,6 +28,8 @@ class Agent:
         self.reward_update_rate = args.reward_update_rate
         self.average_reward = 0
         self.neighbor_indice = np.zeros([])
+        self.clip_param = 0.2
+        # https://openai.com/blog/openai-baselines-ppo/
 
         self.online_net = DQN(args, self.action_space).to(device=args.device)
         if args.model:  # Load pretrained model if provided
@@ -89,29 +91,19 @@ class Agent:
     def reset_noise(self):
         self.online_net.reset_noise()
 
-    # Acts based on single state (no batch)
-    def act(self, state, avail=None):
-        with torch.no_grad():
-            if avail is None:
-                return (self.online_net(state.unsqueeze(0)) * self.support).sum(2).argmax(1).item()
-            temp = (self.online_net(state.unsqueeze(0)) * self.support).sum(2) * torch.tensor(avail)
-            temp[:, avail == 0] = (torch.min(temp) - 100)
-            return temp.argmax(1).item()
-
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_e_greedy(self, state, available=None, epsilon=0.3, action_type='greedy'):  # High ε can reduce evaluation scores drastically
-        if action_type == 'greedy':
-            return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state, available)
+        if action_type == 'greedy' or action_type == 'no_limit':
+            raise ValueError("Greedy action selection is banned in PPO")
         elif action_type == 'boltzmann':
             return self.act_boltzmann(state, available)
-        elif action_type == 'no_limit':
-            return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state)
 
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_boltzmann(self, state, avail):  # High ε can reduce evaluation scores drastically
         with torch.no_grad():
-            res_policy = self.online_net(state.unsqueeze(0)).detach()
-            return self.boltzmann(res_policy, [avail])
+            res_policy, res_policy_log = self.online_net(state.unsqueeze(0))
+            res_action = self.boltzmann(res_policy, [avail])
+            return (res_action, (res_policy_log[:, res_action]).numpy())
 
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
@@ -143,7 +135,7 @@ class Agent:
                                 pipes.close()
                                 list_pro[key] = False
                                 continue
-                        pipes.send(self.act_boltzmann(obs, avial).numpy())
+                        pipes.send(self.act_boltzmann(obs, avial))
                         # convert back to numpy or cpu-tensor, or it will cause error since cuda try to run in
                         # another thread. Keep the gpu resource inside main thread
 
@@ -179,32 +171,20 @@ class Agent:
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, _, _, avails, returns, next_states, nonterminals, weights = \
+        idxs, states, actions, actions_logp, _, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
 
         # critic update
         self.optimiser.zero_grad()
 
         # Calculate current state probabilities (online network noise already sampled)
-        log_ps_a = self.online_net(states, False, log=True)
+        ps_a, log_ps_a = self.online_net(states, False, log=True)
         # Log probabilities log p(s_t, ·; θonline)
 
         with torch.no_grad():
             # Calculate nth next state probabilities
-            dns = self.online_net(next_states)  # Probabilities p(s_t+n, ·; θonline)
-            if self.action_type == 'greedy':
-                dns = dns * avails
-                for ind, avail in enumerate(avails):
-                    if not (avail == 0).all():
-                        dns[ind, avail == 0] = (torch.min(dns[ind]) - 10)
-                argmax_indices_ns = dns.argmax(1)
-                # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
-            elif self.action_type == 'boltzmann':
-                argmax_indices_ns = self.boltzmann(dns, avails.numpy())
-            elif self.action_type == 'no_limit':
-                argmax_indices_ns = dns.argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise
-            pns_a = self.target_net(next_states, False)
+            pns_a, _ = self.target_net(next_states, False)
             # Probabilities p(s_t+n, ·; θtarget)
             # Double-Q probabilities p(s_t+n, argmax_a[(z, p(s_t+n, a; θonline))]; θtarget)
 
@@ -229,25 +209,31 @@ class Agent:
             # m_u = m_u + p(s_t+n, a*)(b - l)
 
             # update the average reward
-            ps_a = self.online_net(states, False)
             self.average_reward = self.average_reward + \
                                   self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
                                                                        torch.sum(pns_a * self.support, dim=1) -
-                                                                       torch.sum(ps_a * self.support, dim=1))
+                                                                       torch.sum(ps_a.detach() * self.support, dim=1))
 
         value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
 
         # Actor update
-        curr_pol_out = self.online_net(states, log=True)
-        policy_loss = - curr_pol_out.gather(-1, actions.unsqueeze(1)) * \
-                      (returns.unsqueeze(1) - self.online_net(states, False) * self.support)
+        curr_pol_out, curr_pol_out_log = self.online_net(states)
+        curr_pol_out_log = curr_pol_out_log.gather(-1, actions.unsqueeze(1))
+        ratios = torch.exp(curr_pol_out_log.squeeze(1) - actions_logp)
+
+        state_value_current, _ = self.online_net(states, False)
+        advantage = returns - torch.sum(state_value_current.detach() * self.support, dim=-1)
+        advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-7)
+        surr1 = ratios * advantage
+        surr2 = torch.clamp(ratios, 1.0 - self.clip_param, 1.0 + self.clip_param) * advantage
+
+        entropy_loss = -(curr_pol_out * curr_pol_out_log).mean()
+
+        policy_loss = - torch.min(surr1, surr2).mean() - entropy_loss
         # log probs * advantage
-        policy_loss = policy_loss.mean()
         policy_loss += -(curr_pol_out ** 2).mean() * 1e-3
 
-        entropy_loss = (self.online_net(states, log=True) * self.online_net(states, log=False)).mean()
-
-        loss = (weights * value_loss).mean() + policy_loss + entropy_loss
+        loss = (weights * value_loss).mean() + policy_loss
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
@@ -274,7 +260,8 @@ class Agent:
     # Evaluates Q-value based on single state (no batch)
     def evaluate_q(self, state):
         with torch.no_grad():
-            return (self.online_net(state.unsqueeze(0), False) * self.support).sum(-1).item()
+            temp, _ = self.online_net(state.unsqueeze(0), False)
+            return (temp * self.support).sum(-1).item()
 
     def train(self):
         self.online_net.train()

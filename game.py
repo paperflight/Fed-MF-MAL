@@ -301,13 +301,21 @@ class Decentralized_Game:
         #  TODO: if state dims is two, change this to stack
 
         action = []
+        action_logp = []
         if accesspoint is None:
             action = self.environment.random_action('randomnon12', avil_action)
+            action_logp = [0 for _ in range(self.environment.ap_number)]
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
-                action.append(accesspoint[index].act_e_greedy(ap_state[index], avil_action[index],
-                                                              epsilon, self.args.action_selection))
+                action_ret = accesspoint[index].act_e_greedy(ap_state[index], avil_action[index],
+                                                              epsilon, self.args.action_selection)
+                if type(action_ret) is int:
+                    action.append(action_ret)
+                    action_logp.append(0)
+                else:
+                    action.append(action_ret[0])
+                    action_logp.append(action_ret[1])
                 # Choose an action greedily (with noisy weights)
         action = np.array(action)
         if gp.ACTION_NUM == 6:
@@ -327,7 +335,7 @@ class Decentralized_Game:
             #                           self.environment.coop_graph.hand_shake_result,
             #                           self.environment.user_position)
 
-        return ap_state, action_re, avil_action, \
+        return ap_state, action_re, action_logp, avil_action, \
                [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def step_p(self, accesspoint=None):
@@ -345,13 +353,21 @@ class Decentralized_Game:
         #  TODO: if state dims is two, change this to stack
 
         action = []
+        action_logp = []
         if accesspoint is None:
             action = self.environment.random_action('randomnon12', avil_action)
+            action_logp = [0 for _ in range(self.environment.ap_number)]
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):
                 pipe.send((ap_state[index], avil_action[index]))
-                action.append(pipe.recv())
+                action_ret = pipe.recv()
+                if type(action_ret) is int:
+                    action.append(action_ret)
+                    action_logp.append(0)
+                else:
+                    action.append(action_ret[0])
+                    action_logp.append(action_ret[1])
                 # Choose an action greedily (with noisy weights)
         action = np.array(action)
         if gp.ACTION_NUM == 6:
@@ -365,7 +381,7 @@ class Decentralized_Game:
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
-        return ap_state, action_re, avil_action, \
+        return ap_state, action_re, action_logp, avil_action, \
                [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
 
     def close(self):

@@ -9,11 +9,13 @@ import GLOBAL_PRARM as gp
 
 scale_factor = 255
 Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (2, 47, 47)),
-                             ('action', np.int8), ('neighbor_action', np.int8, (6 + 1)),
+                             ('action', np.int8), ('action_logp', np.float),
+                             ('neighbor_action', np.int8, (6 + 1)),
                              ('global_action', np.int8, (gp.NUM_OF_ACCESSPOINT)),
                              ('avail', np.bool, (gp.ACTION_NUM)),
                              ('reward', np.float32), ('nonterminal', np.bool_)])
-blank_trans_aps = (0, np.zeros((2, 47, 47), dtype=np.uint8), 0, np.ones(7, dtype=np.int8),
+blank_trans_aps = (0, np.zeros((2, 47, 47), dtype=np.uint8), 0, 0,
+                   np.ones(7, dtype=np.int8),
                    np.ones(gp.NUM_OF_ACCESSPOINT, dtype=np.int8), np.ones(gp.ACTION_NUM, dtype=np.bool), 0.0, False)
 
 
@@ -121,14 +123,15 @@ class ReplayMemory:
         # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
 
     # Adds state and action at time t, reward and terminal at time t + 1
-    def append(self, state, action, nei_action, glob_action, avail, reward, terminal):
+    def append(self, state, action, action_logp, nei_action, glob_action, avail, reward, terminal):
         if gp.ACTION_NUM == 6:
             action = int((action - 1) / 2)
         state_clip = torch.clone(state)
         state_clip[0] = (state_clip[0] + 1) / 2
         state_clip = state_clip.mul(scale_factor).to(dtype=torch.uint8, device=torch.device('cpu'))
         # Only store last frame and discretise to save memory
-        self.transitions.append((self.t, state_clip, action, nei_action, glob_action, avail, reward, not terminal),
+        self.transitions.append((self.t, state_clip, action, action_logp, nei_action, glob_action,
+                                 avail, reward, not terminal),
                                 self.transitions.max)  # Store new transition with maximum priority
         self.t = 0 if terminal else self.t + 1  # Start new episodes with t = 0
         # Returns the transitions with blank states where appropriate
@@ -180,6 +183,8 @@ class ReplayMemory:
                 self.remove_function(next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :])
         # Discrete action to be used as index
         action = torch.tensor(np.copy(transitions['action'][:, self.history - 1]), dtype=torch.int64, device=self.device)
+        action_logp = torch.tensor(np.copy(transitions['action_logp'][:, self.history - 1]), dtype=torch.int64,
+                                   device=self.device)
         nei_action = torch.tensor(np.copy(transitions['neighbor_action'][:, self.history - 1]),
                                   dtype=torch.int64, device=self.device)
         glob_action = torch.tensor(np.copy(transitions['global_action'][:, self.history - 1]),
@@ -193,7 +198,7 @@ class ReplayMemory:
             np.expand_dims(transitions['nonterminal'][:, self.history + self.n - 1], axis=1),
             dtype=torch.float32, device=self.device)
 
-        return probs, idxs, tree_idxs, state, action, nei_action, \
+        return probs, idxs, tree_idxs, state, action, action_logp, nei_action, \
                glob_action, avail, R, next_state, nonterminal
 
     def get_relate_sample(self, batch_size, idxs):
@@ -212,14 +217,15 @@ class ReplayMemory:
     def sample(self, batch_size, avg=0):
         p_total = self.transitions.total()
         # Retrieve sum of all priorities (used to create a normalised probability distribution)
-        probs, idxs, tree_idxs, states, actions, nei_action, glob_action, avail, returns, next_states, nonterminals = \
-            self._get_sample_from_segment(batch_size, p_total, avg)
+        probs, idxs, tree_idxs, states, actions, action_logp, nei_action, glob_action, \
+        avail, returns, next_states, nonterminals = self._get_sample_from_segment(batch_size, p_total, avg)
         probs = probs / p_total  # Calculate normalised probabilities
         capacity = self.capacity if self.transitions.full else self.transitions.index
         weights = (capacity * probs) ** -self.priority_weight  # Compute importance-sampling weights w
         weights = torch.tensor(weights / weights.max(), dtype=torch.float32,
                                device=self.device)  # Normalise by max importance-sampling weight from batch
-        return (tree_idxs, idxs), states, actions, nei_action, glob_action, avail, returns, next_states, nonterminals, weights
+        return (tree_idxs, idxs), states, actions, action_logp, \
+               nei_action, glob_action, avail, returns, next_states, nonterminals, weights
 
     def update_priorities(self, idxs, priorities):
         priorities = np.power(priorities, self.priority_exponent)

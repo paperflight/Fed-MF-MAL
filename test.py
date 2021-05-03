@@ -25,7 +25,7 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
     for _ in range(eps):
         if done:
             done = new_game.reset()
-        state, action, avail, reward, done = new_game.step_p(c_pipe)  # Step
+        state, action, _, avail, reward, done = new_game.step_p(c_pipe)  # Step
         # print(action, reward)
         reward_sum_aps.append(reward)
 
@@ -57,7 +57,7 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
     for _ in range(args.evaluation_episodes):
         if done:
             done = env.reset()
-        state, action, avail, reward, done = env.step(dqn)
+        state, action, _, avail, reward, done = env.step(dqn)
 
         reward_sum.append(reward)
 

@@ -129,7 +129,7 @@ class Agent:
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
             if count == 0:
-                action_probs = np.array([1 / np.sum(mask[i]) if _ else 0 for _ in mask[i]])
+                action_probs = np.array([1.0 / np.sum(mask[i]) if _ != 0 else 0 for _ in mask[i]])
                 print('Zero probs, random action')
             else:
                 action_probs = np.array([x / count for x in action_probs])

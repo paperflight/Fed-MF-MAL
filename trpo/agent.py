@@ -8,7 +8,7 @@ from scipy.special import softmax as softmax_sci
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
-from ppo.basic_block import DQN
+from trpo.basic_block import DQN
 
 
 class Agent:
@@ -30,6 +30,8 @@ class Agent:
         self.neighbor_indice = np.zeros([])
         self.clip_param = 0.2
         # https://openai.com/blog/openai-baselines-ppo/
+        self.damping = 0.1  # the damping coeffificent
+        self.max_kl = 0.01  # the max kl divergence
 
         self.online_net = DQN(args, self.action_space).to(device=args.device)
         if args.model:  # Load pretrained model if provided
@@ -103,7 +105,7 @@ class Agent:
         with torch.no_grad():
             res_policy, res_policy_log = self.online_net(state.unsqueeze(0))
             res_action = self.boltzmann(res_policy, [avail])
-            return (res_action, (res_policy_log[0]).numpy())
+            return (res_action, (res_policy_log[:, res_action]).numpy())
 
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
@@ -167,6 +169,73 @@ class Agent:
         zeros = zeros.scatter(scatter_dim, y_tensor, 1)
         return zeros[..., 0:num_classes]
 
+    # conjugated gradient
+    def _conjugated_gradient(self, b, update_steps, obs, pi_old, residual_tol=1e-10):
+        # the initial solution is zero
+        x = torch.zeros(b.size(), dtype=torch.float32)
+        r = b.clone()
+        p = b.clone()
+        rdotr = torch.dot(r, r)
+        for i in range(update_steps):
+            fv_product = self._fisher_vector_product(p, obs, pi_old)
+            alpha = rdotr / torch.dot(p, fv_product)
+            x = x + alpha * p
+            r = r - alpha * fv_product
+            new_rdotr = torch.dot(r, r)
+            beta = new_rdotr / rdotr
+            p = r + beta * p
+            rdotr = new_rdotr
+            # if less than residual tot.. break
+            if rdotr < residual_tol:
+                break
+        return x
+
+    # line search
+    def _line_search(self, x, full_step, expected_rate, obs, adv, actions, pi_old, max_backtracks=10, accept_ratio=0.1):
+        fval = self._get_surrogate_loss(obs, adv, actions, pi_old).data
+        for (_n_backtracks, stepfrac) in enumerate(0.5 ** np.arange(max_backtracks)):
+            xnew = x + stepfrac * full_step
+            self._set_flat_params_to(xnew)
+            new_fval = self._get_surrogate_loss(obs, adv, actions, pi_old).data
+            actual_improve = fval - new_fval
+            expected_improve = expected_rate * stepfrac
+            ratio = actual_improve / expected_improve
+            if ratio.item() > accept_ratio and actual_improve.item() > 0:
+                return True, xnew
+        return False, x
+
+    def _set_flat_params_to(self, flat_params):
+        prev_indx = 0
+        for param in self.online_net.actor_parameters():
+            flat_size = int(np.prod(list(param.size())))
+            param.data.copy_(flat_params[prev_indx:prev_indx + flat_size].view(param.size()))
+            prev_indx += flat_size
+
+    # get the surrogate loss
+    def _get_surrogate_loss(self, obs, adv, actions, pi_old):
+        _, logp = self.online_net(obs)
+        surr_loss = -torch.exp(logp.gather(-1, actions.unsqueeze(1)) - pi_old.gather(-1, actions.unsqueeze(1))) * adv
+        return surr_loss.mean()
+
+    # the product of the fisher informaiton matrix and the nature gradient -> Ax
+    def _fisher_vector_product(self, v, obs, pi_old):
+        kl = self._get_kl(obs, pi_old)
+        kl = kl.mean()
+        # start to calculate the second order gradient of the KL
+        kl_grads = torch.autograd.grad(kl, self.online_net.actor_parameters(), create_graph=True)
+        flat_kl_grads = torch.cat([grad.view(-1) for grad in kl_grads])
+        kl_v = (flat_kl_grads * torch.autograd.Variable(v)).sum()
+        kl_second_grads = torch.autograd.grad(kl_v, self.online_net.actor_parameters())
+        flat_kl_second_grads = torch.cat([grad.contiguous().view(-1) for grad in kl_second_grads]).data
+        flat_kl_second_grads = flat_kl_second_grads + self.damping * v
+        return flat_kl_second_grads
+
+    # get the kl divergence between two distributions
+    def _get_kl(self, obs, pi_old):
+        _, logp = self.online_net(obs)
+        kl = torch.exp(pi_old) * (pi_old - logp)
+        return kl.sum(1, keepdim=True)
+
     def learn(self, mem):
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
@@ -174,7 +243,36 @@ class Agent:
         idxs, states, actions, actions_logp, _, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
 
+        self.online_net.zero_grad()
+        with torch.no_grad():
+            state_value_current, _ = self.online_net(states, False)
+            advantage = returns - torch.sum(state_value_current.detach() * self.support, dim=-1)
+            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-7)
+
+        # get the surr loss
+        surr_loss = self._get_surrogate_loss(states, advantage, actions, actions_logp)
+        # comupte the surrogate gardient -> g, Ax = g, where A is the fisher information matrix
+        surr_loss.backward(retain_graph=True)
+        flat_surr_grad = torch.cat([param.grad.view(-1) for param in self.online_net.actor_parameters()]).data
+        # use the conjugated gradient to calculate the scaled direction vector (natural gradient)
+        nature_grad = self._conjugated_gradient(-flat_surr_grad, 10, states, actions_logp)
+        # calculate the scaleing ratio
+        non_scale_kl = 0.5 * (nature_grad * self._fisher_vector_product(nature_grad, states, actions_logp)).sum(0, keepdim=True)
+        scale_ratio = torch.sqrt(non_scale_kl / self.max_kl)
+        final_nature_grad = nature_grad / scale_ratio[0]
+        # calculate the expected improvement rate...
+        expected_improve = (-flat_surr_grad * nature_grad).sum(0, keepdim=True) / scale_ratio[0]
+        # get the flat param ...
+        prev_params = torch.cat([param.data.view(-1) for param in self.online_net.actor_parameters()])
+        # start to do the line search
+        success, new_params = self._line_search(prev_params, final_nature_grad,
+                                                expected_improve, states, advantage, actions, actions_logp)
+        if any(np.isnan(new_params.cpu().numpy())):
+            print("NaN detected. Skipping update...")
+        self._set_flat_params_to(new_params)
+
         # critic update
+        self.online_net.zero_grad()
         self.optimiser.zero_grad()
 
         # Calculate current state probabilities (online network noise already sampled)
@@ -216,25 +314,7 @@ class Agent:
 
         value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
 
-        # Actor update
-        actions_logp_s = actions_logp.gather(-1, actions.unsqueeze(1))
-        curr_pol_out, curr_pol_out_log = self.online_net(states)
-        curr_pol_out_log = curr_pol_out_log.gather(-1, actions.unsqueeze(1))
-        ratios = torch.exp(curr_pol_out_log.squeeze(1) - actions_logp_s)
-
-        state_value_current, _ = self.online_net(states, False)
-        advantage = returns - torch.sum(state_value_current.detach() * self.support, dim=-1)
-        advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-7)
-        surr1 = ratios * advantage
-        surr2 = torch.clamp(ratios, 1.0 - self.clip_param, 1.0 + self.clip_param) * advantage
-
-        entropy_loss = -(curr_pol_out * curr_pol_out_log).mean()
-
-        policy_loss = - torch.min(surr1, surr2).mean() - entropy_loss
-        # log probs * advantage
-        policy_loss += -(curr_pol_out ** 2).mean() * 1e-3
-
-        loss = (weights * value_loss).mean() + policy_loss
+        loss = (weights * value_loss).mean()
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)

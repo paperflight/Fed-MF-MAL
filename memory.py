@@ -9,12 +9,12 @@ import GLOBAL_PRARM as gp
 
 scale_factor = 255
 Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (2, 47, 47)),
-                             ('action', np.int8), ('action_logp', np.float),
+                             ('action', np.int8), ('action_logp', np.float, (gp.ACTION_NUM)),
                              ('neighbor_action', np.int8, (6 + 1)),
                              ('global_action', np.int8, (gp.NUM_OF_ACCESSPOINT)),
                              ('avail', np.bool, (gp.ACTION_NUM)),
                              ('reward', np.float32), ('nonterminal', np.bool_)])
-blank_trans_aps = (0, np.zeros((2, 47, 47), dtype=np.uint8), 0, 0,
+blank_trans_aps = (0, np.zeros((2, 47, 47), dtype=np.uint8), 0, np.zeros(gp.ACTION_NUM),
                    np.ones(7, dtype=np.int8),
                    np.ones(gp.NUM_OF_ACCESSPOINT, dtype=np.int8), np.ones(gp.ACTION_NUM, dtype=np.bool), 0.0, False)
 
@@ -183,7 +183,7 @@ class ReplayMemory:
                 self.remove_function(next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :])
         # Discrete action to be used as index
         action = torch.tensor(np.copy(transitions['action'][:, self.history - 1]), dtype=torch.int64, device=self.device)
-        action_logp = torch.tensor(np.copy(transitions['action_logp'][:, self.history - 1]), dtype=torch.int64,
+        action_logp = torch.tensor(np.copy(transitions['action_logp'][:, self.history - 1]), dtype=torch.float,
                                    device=self.device)
         nei_action = torch.tensor(np.copy(transitions['neighbor_action'][:, self.history - 1]),
                                   dtype=torch.int64, device=self.device)

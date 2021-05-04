@@ -304,7 +304,7 @@ class Decentralized_Game:
         action_logp = []
         if accesspoint is None:
             action = self.environment.random_action('randomnon12', avil_action)
-            action_logp = [0 for _ in range(self.environment.ap_number)]
+            action_logp = [np.zeros(gp.ACTION_NUM) for _ in range(self.environment.ap_number)]
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index in range(self.environment.ap_number):
@@ -312,7 +312,7 @@ class Decentralized_Game:
                                                               epsilon, self.args.action_selection)
                 if type(action_ret) is int:
                     action.append(action_ret)
-                    action_logp.append(0)
+                    action_logp.append(np.zeros(gp.ACTION_NUM))
                 else:
                     action.append(action_ret[0])
                     action_logp.append(action_ret[1])
@@ -356,7 +356,7 @@ class Decentralized_Game:
         action_logp = []
         if accesspoint is None:
             action = self.environment.random_action('randomnon12', avil_action)
-            action_logp = [0 for _ in range(self.environment.ap_number)]
+            action_logp = [np.zeros(gp.ACTION_NUM) for _ in range(self.environment.ap_number)]
         else:
             # avil_action = [avil_action[ind][1::2] for ind in range(len(avil_action))]
             for index, pipe in enumerate(accesspoint):
@@ -364,7 +364,7 @@ class Decentralized_Game:
                 action_ret = pipe.recv()
                 if type(action_ret) is int:
                     action.append(action_ret)
-                    action_logp.append(0)
+                    action_logp.append(np.zeros(gp.ACTION_NUM))
                 else:
                     action.append(action_ret[0])
                     action_logp.append(action_ret[1])

@@ -219,7 +219,8 @@ class Agent:
     def _get_surrogate_loss(self, obs, adv, actions, pi_old):
         p, logp = self.online_net(obs)
         p = p.gather(-1, actions.unsqueeze(1))
-        ratios = torch.div(p, pi_old + 1e-7)
+        pi_old_s = pi_old.gather(-1, actions.unsqueeze(1))
+        ratios = torch.div(p, pi_old_s + 1e-7)
         # mask the zero probility to zero
         surr_loss = - ratios * adv
         return surr_loss.mean()
@@ -240,9 +241,9 @@ class Agent:
     # get the kl divergence between two distributions
     def _get_kl(self, obs, pi_old):
         p, logp = self.online_net(obs)
-        kl = F.kl_div(pi_old, p)
+        kl = F.kl_div(pi_old, p, reduction='sum')
         # kl = torch.exp(pi_old) * (pi_old - logp)
-        return kl.sum(1, keepdim=True)
+        return kl
 
     def learn(self, mem):
         # Sample transitions

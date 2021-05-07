@@ -10,7 +10,7 @@ import GLOBAL_PRARM as gp
 import math
 
 from maddpg_sp.basic_block import Actor_Critic
-
+# https://github.com/cyoon1729/Multi-agent-reinforcement-learning/blob/master/MADDPG/agent.py
 
 # TODO: maddpg learns fast, set a small target network update rate or remove target nework for non-episodic cases
 
@@ -239,7 +239,8 @@ class Agent:
             for nei_i, _ in enumerate(neigh_mem):
                 if _ is not None:
                     nei_next_state, nei_avails = _
-                    nei_dns = self.online_net(nei_next_state)  # Probabilities p(s_t+n, ·; θonline)
+                    nei_dns = self.sister_aps_list[nei_i].online_net(nei_next_state)
+                    # Probabilities p(s_t+n, ·; θonline)
                     if self.action_type == 'greedy':
                         nei_dns = nei_dns * nei_avails
                         for nei_ind, nei_avail in enumerate(nei_avails):

@@ -9,7 +9,9 @@ from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
 from ppo.basic_block import DQN
-
+# https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py
+# https://openai.com/blog/openai-baselines-ppo/
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/distributions.py
 
 class Agent:
     def __init__(self, args, env, index):
@@ -103,7 +105,7 @@ class Agent:
         with torch.no_grad():
             res_policy, res_policy_log = self.online_net(state.unsqueeze(0))
             res_action = self.boltzmann(res_policy, [avail])
-            return (res_action, (res_policy_log[0]).numpy())
+            return (res_action, (res_policy[0]).numpy())
 
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
@@ -171,7 +173,7 @@ class Agent:
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, actions_logp, _, _, avails, returns, next_states, nonterminals, weights = \
+        idxs, states, actions, actions_p, _, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
 
         # critic update
@@ -217,10 +219,12 @@ class Agent:
         value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
 
         # Actor update
-        actions_logp_s = actions_logp.gather(-1, actions.unsqueeze(1))
+        actions_p_s = actions_p.gather(-1, actions.unsqueeze(1))
         curr_pol_out, curr_pol_out_log = self.online_net(states)
-        curr_pol_out_log = curr_pol_out_log.gather(-1, actions.unsqueeze(1))
-        ratios = torch.exp(curr_pol_out_log.squeeze(1) - actions_logp_s)
+        curr_pol_out_p = curr_pol_out.gather(-1, actions.unsqueeze(1))
+        ratios = torch.div(curr_pol_out_p, actions_p_s + 1e-7)
+        # in case of the situation of zero probability caused Nan
+        # since ratio is prob/oldprob, so zero probability should be zero or one
 
         state_value_current, _ = self.online_net(states, False)
         advantage = returns - torch.sum(state_value_current.detach() * self.support, dim=-1)
@@ -228,7 +232,8 @@ class Agent:
         surr1 = ratios * advantage
         surr2 = torch.clamp(ratios, 1.0 - self.clip_param, 1.0 + self.clip_param) * advantage
 
-        entropy_loss = -(curr_pol_out * curr_pol_out_log).mean()
+        dist = torch.distributions.Categorical(curr_pol_out)
+        entropy_loss = dist.entropy().mean()
 
         policy_loss = - torch.min(surr1, surr2).mean() - entropy_loss
         # log probs * advantage

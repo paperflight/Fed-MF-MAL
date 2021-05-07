@@ -9,7 +9,11 @@ from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
 from ddpg.basic_block import Actor_Critic
-
+# https://github.com/megvii-research/pytorch-gym/blob/master/base/ddpg.py
+# https://arxiv.org/pdf/2002.05138.pdf
+# https://arxiv.org/pdf/1709.06560.pdf
+# https://github.com/floodsung/DDPG/blob/master/actor_network_bn.py
+# https://github.com/cookbenjamin/DDPG/blob/master/ddpg.py
 
 # TODO: maddpg learns fast, set a small target network update rate or remove target nework for non-episodic cases
 

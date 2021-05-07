@@ -9,6 +9,9 @@ from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 
 from acer.basic_block import DQN
+# https://github.com/ethancaballero/pytorch-a2c-ppo/blob/master/main.py
+# https://github.com/lnpalmer/A2C/blob/master/train.py
+# https://github.com/openai/baselines/blob/master/baselines/a2c/a2c.py
 
 
 class Agent:

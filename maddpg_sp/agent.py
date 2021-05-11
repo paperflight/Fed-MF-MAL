@@ -240,7 +240,7 @@ class Agent:
             elif self.action_type == 'no_limit':
                 argmax_indices_ns = dns.argmax(1)
             self.target_net.reset_noise()  # Sample new target net noise
-            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action, False)
+            next_nei_policy_out = self.blind_neighbor_observation(next_states, neighbor_action, True)
             pns_a = self.target_net(next_states, False,
                                             torch.cat([next_nei_policy_out[:, 0:int((neighbor_action.size(1) - 1) / 2)],
                                                        self._to_one_hot(torch.tensor(argmax_indices_ns),

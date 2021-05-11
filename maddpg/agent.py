@@ -235,11 +235,11 @@ class Agent:
 
         with torch.no_grad():
             # Calculate nth next state probabilities
-            nei_argmax_indices_ns = np.zeros(neighbor_action.size(), dtype=np.int)
+            nei_argmax_indices_ns = np.ones(neighbor_action.size(), dtype=np.int) * -1
             for nei_i, _ in enumerate(neigh_mem):
                 if _ is not None:
                     nei_next_state, nei_avails = _
-                    nei_dns = self.sister_aps_list[nei_i].online_net(nei_next_state)
+                    nei_dns = self.sister_aps_list[self.neighbor_indice[nei_i]].target_net(nei_next_state)
                     # Probabilities p(s_t+n, ·; θonline)
                     if self.action_type == 'greedy':
                         nei_dns = nei_dns * nei_avails

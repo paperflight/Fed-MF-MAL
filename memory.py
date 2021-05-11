@@ -183,7 +183,7 @@ class ReplayMemory:
                 self.remove_function(next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :])
         # Discrete action to be used as index
         action = torch.tensor(np.copy(transitions['action'][:, self.history - 1]), dtype=torch.int64, device=self.device)
-        action_logp = torch.tensor(np.copy(transitions['action_logp'][:, self.history - 1]), dtype=torch.float,
+        action_logp = torch.tensor(np.copy(transitions['action_logp'][:, self.history - 1]), dtype=torch.float32,
                                    device=self.device)
         nei_action = torch.tensor(np.copy(transitions['neighbor_action'][:, self.history - 1]),
                                   dtype=torch.int64, device=self.device)

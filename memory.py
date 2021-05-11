@@ -204,6 +204,9 @@ class ReplayMemory:
     def get_relate_sample(self, batch_size, idxs):
         transitions = self._get_transitions(idxs)
         all_state = transitions['state']
+        state = torch.tensor(all_state[:, :self.history], device=self.device, dtype=torch.float32).div_(scale_factor)
+        state = torch.reshape(state, (batch_size, -1, state.shape[-2], state.shape[-1]))
+        state[:, 0::gp.OBSERVATION_DIMS] = torch.round((state[:, 0::gp.OBSERVATION_DIMS] - 0.5) * 2)
         next_state = torch.tensor(all_state[:, self.n : self.n + self.history],
                                   device=self.device, dtype=torch.float32).div_(scale_factor)
         next_state = torch.reshape(next_state, (batch_size, -1, next_state.shape[-2], next_state.shape[-1]))
@@ -212,7 +215,7 @@ class ReplayMemory:
             next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :] = \
                 self.remove_function(next_state[:, gp.OBSERVATION_DIMS * (self.history - 1), :, :])
         avail = torch.tensor(np.copy(transitions['avail'][:, self.history - 1]), dtype=torch.bool, device=self.device)
-        return next_state, avail
+        return state, next_state, avail
 
     def sample(self, batch_size, avg=0):
         p_total = self.transitions.total()

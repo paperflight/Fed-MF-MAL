@@ -66,7 +66,7 @@ class Actor_Critic(nn.Module):
         self.actor_end = nn.Sequential(NoisyLinear(self.conv_output_size, args.hidden_size, std_init=args.noisy_std),
                                        NoisyLinear(args.hidden_size, args.hidden_size, std_init=args.noisy_std),
                                        nn.LeakyReLU(),
-                                       nn.Linear(args.hidden_size, action_space), nn.Tanh())
+                                       nn.Linear(args.hidden_size, action_space), nn.LeakyReLU())
         self.value_end = nn.Sequential(NoisyLinear(self.conv_output_size + self.action_space * 7, args.hidden_size,
                                                    std_init=args.noisy_std), nn.LeakyReLU(),
                                        NoisyLinear(args.hidden_size, args.hidden_size, std_init=args.noisy_std),
@@ -76,7 +76,7 @@ class Actor_Critic(nn.Module):
     def forward(self, x, actor_or_critic=True, action=None, log=False):
         x = self.convs(x.float()).view(x.size(0), -1)
         if actor_or_critic:  # actor run if ture
-            return self.actor_end(x)
+            return F.softmax(self.actor_end(x), dim=-1)
         else:  # critic run if false
             v = self.value_end(torch.cat([x, torch.reshape(action, (action.size(0), -1))], 1))
             if log:  # Use log softmax for numerical stability

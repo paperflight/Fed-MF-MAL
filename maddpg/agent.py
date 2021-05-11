@@ -9,7 +9,7 @@ from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
 import math
 
-from maddpg_sp.basic_block import Actor_Critic
+from maddpg.basic_block import Actor_Critic
 # https://github.com/cyoon1729/Multi-agent-reinforcement-learning/blob/master/MADDPG/agent.py
 
 # TODO: maddpg learns fast, set a small target network update rate or remove target nework for non-episodic cases
@@ -124,7 +124,7 @@ class Agent:
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
         res = []
-        res_policy = softmax_sci(res_policy.numpy(), axis=1)
+        res_policy = res_policy.numpy()
         for i in range(sizeofres[0]):
             action_probs = [res_policy[i][ind] * mask[i][ind] for ind in range(res_policy[i].shape[0])]
             count = np.sum(action_probs)
@@ -218,13 +218,16 @@ class Agent:
         idxs, states, actions, _, neighbor_action, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
         neigh_mem = []
+        neigh_mem_c = []
         for _ in self.neighbor_indice:
             if _ != -1:
-                nei_next_states, nei_avails = \
+                nei_states, nei_next_states, nei_avails = \
                     self.sister_mem_list[_].get_relate_sample(self.batch_size, idxs[1])
                 neigh_mem.append((nei_next_states, nei_avails))
+                neigh_mem_c.append((nei_states, nei_avails))
             else:
                 neigh_mem.append(None)
+                neigh_mem_c.append(None)
 
         # critic update
         self.optimiser.zero_grad()
@@ -288,7 +291,14 @@ class Agent:
         value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
 
         # Actor update
-        policy_loss = -self.online_net(states, False, self._to_one_hot(neighbor_action, self.action_space))
+        nei_action_p = torch.zeros((neighbor_action.size(0), neighbor_action.size(1), self.action_space),
+                                   dtype=torch.float32)
+        for nei_i, _ in enumerate(neigh_mem_c):
+            if _ is not None:
+                nei_state, nei_avail = _
+                nei_p = self.sister_aps_list[self.neighbor_indice[nei_i]].online_net(nei_state) * nei_avails
+                nei_action_p[:, nei_i] = nei_p
+        policy_loss = -self.online_net(states, False, nei_action_p.view(nei_action_p.size(0), -1))
         policy_loss = policy_loss.mean()
         policy_loss += -(self.online_net(states) ** 2).mean() * 1e-3
 

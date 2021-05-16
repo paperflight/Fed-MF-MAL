@@ -346,7 +346,7 @@ else:
                 for index in range(env.environment.ap_number):
                     dqn[index].learn(mem_aps[index])  # Train with n-step distributional double-Q learning
 
-            if T % args.federated_round == 0 and 0 < args.federated_round:
+            if 0 < args.federated_round and T % args.federated_round == 0:
                 global_weight = average_weights([model.get_state_dict() for model in dqn])
                 global_target = average_weights([model.get_target_dict() for model in dqn])
                 global_model.set_state_dict(global_weight)

@@ -11,9 +11,9 @@ DENSE_OF_USERS = 100
 
 MAX_USERS_MOBILITY = 1
 USER_QOS = 10
-USER_WAITING = 3
-USER_ADDING = 2
-ONE_EPISODE_RUN = 0
+USER_WAITING = 5
+USER_ADDING = 5
+ONE_EPISODE_RUN = 200
 # 0 or negative for non-episodic run
 
 AP_TRANSMISSION_CENTER_FREUENCY = 5  # GHz
@@ -47,7 +47,7 @@ OBSERVATION_DIMS = 2  # each cluster has two observations: ap position, user pos
 # TODO: when selecting observation 4 and 5, change the observation dims too
 OBSERVATION_VERSION = 1  # 1: observation v1, 2 observation v2
 # for details look into game.get_observation_vx() function
-ACTION_NUM = 12
+ACTION_NUM = 13
 
 
 # training and loading parameters

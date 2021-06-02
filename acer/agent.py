@@ -238,7 +238,7 @@ class Agent:
 
         entropy_loss = -(curr_pol_out_log * curr_pol_out).mean()
 
-        loss = (weights * value_loss).mean() + policy_loss - entropy_loss
+        loss = (weights * value_loss).mean() + policy_loss - 1e-2 * entropy_loss
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)

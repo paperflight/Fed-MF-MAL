@@ -25,7 +25,7 @@ import torch.multiprocessing
 # TODO: When running in server, uncomment this line if needed
 import copy as cp
 
-from maddpg_sp.agent import Agent
+from acer_critic_only.agent import Agent
 from game import Decentralized_Game as Env
 from memory import ReplayMemory
 from test import test, test_p
@@ -35,7 +35,7 @@ from test import test, test_p
 
 # Note that hyperparameters may originally be reported in ATARI game frames instead of agent steps
 parser = argparse.ArgumentParser(description='Rainbow')
-parser.add_argument('--id', type=str, default='default', help='Experiment ID')
+parser.add_argument('--id', type=str, default='default_acer_q', help='Experiment ID')
 parser.add_argument('--seed', type=int, default=123, help='Random seed')
 parser.add_argument('--disable-cuda', action='store_true', help='Disable CUDA')
 parser.add_argument('--T-max', type=int, default=int(50e6), metavar='STEPS',
@@ -82,7 +82,7 @@ parser.add_argument('--reward-update-rate', type=float, default=0.01, metavar='Î
                     help='Average value step rate (for non-episodic task)')
 parser.add_argument('--adam-eps', type=float, default=1.5e-4, metavar='Îµ', help='Adam epsilon')
 parser.add_argument('--batch-size', type=int, default=32, metavar='SIZE', help='Batch size')
-parser.add_argument('--better-indicator', type=float, default=1.0, metavar='b',
+parser.add_argument('--better-indicator', type=float, default=1.05, metavar='b',
                     help='The new model should be b times of old performance to be recorded')
 # TODO: Switch interval should not be large
 parser.add_argument('--learn-start', type=int, default=int(2000), metavar='STEPS',
@@ -350,15 +350,14 @@ else:
                 global_weight = average_weights([model.get_state_dict() for model in dqn])
                 global_target = average_weights([model.get_target_dict() for model in dqn])
                 global_model.set_state_dict(global_weight)
-                global_model.set_target_dict(global_target)
+                # global_model.set_target_dict(global_target)
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + ' Global averaging starts')
-                global_model.save(results_dir, 'Global_')
                 average_reward = np.array([model.average_reward for model in dqn])
                 average_reward = np.mean(average_reward)
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + ' Averaged reward is: ' + str(float(average_reward)))
                 for models in dqn:
                     models.set_state_dict(global_weight)
-                    models.set_target_dict(global_target)
+                    # models.set_target_dict(global_target)
                     models.average_reward = average_reward
 
             # If memory path provided, save it
@@ -387,6 +386,9 @@ else:
 
             if aps_pack[2]:
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + '   Better model, accepted.')
+                global_model.save(results_dir, 'Global_')
+                # for ind, mod in enumerate(dqn):
+                #     mod.save(results_dir, ind)
             else:
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + '   Worse model, reject.')
             for index in range(env.environment.ap_number):

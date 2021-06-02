@@ -109,7 +109,7 @@ class Agent:
         with torch.no_grad():
             res_policy, res_policy_log = self.online_net(state.unsqueeze(0))
             res_action = self.boltzmann(res_policy, [avail])
-            return (res_action, (res_policy[:, res_action]).numpy())
+            return (res_action, (res_policy_log[:, res_action]).numpy())
 
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
@@ -217,12 +217,8 @@ class Agent:
 
     # get the surrogate loss
     def _get_surrogate_loss(self, obs, adv, actions, pi_old):
-        p, logp = self.online_net(obs)
-        p = p.gather(-1, actions.unsqueeze(1))
-        pi_old_s = pi_old.gather(-1, actions.unsqueeze(1))
-        ratios = torch.div(p, pi_old_s + 1e-7)
-        # mask the zero probility to zero
-        surr_loss = - ratios * adv
+        _, logp = self.online_net(obs)
+        surr_loss = -torch.exp(logp.gather(-1, actions.unsqueeze(1)) - pi_old.gather(-1, actions.unsqueeze(1))) * adv
         return surr_loss.mean()
 
     # the product of the fisher informaiton matrix and the nature gradient -> Ax
@@ -240,10 +236,9 @@ class Agent:
 
     # get the kl divergence between two distributions
     def _get_kl(self, obs, pi_old):
-        p, logp = self.online_net(obs)
-        kl = F.kl_div(pi_old, p, reduction='sum')
-        # kl = torch.exp(pi_old) * (pi_old - logp)
-        return kl
+        _, logp = self.online_net(obs)
+        kl = torch.exp(pi_old) * (pi_old - logp)
+        return kl.sum(1, keepdim=True)
 
     def learn(self, mem):
         # Sample transitions

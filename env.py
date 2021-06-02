@@ -337,7 +337,7 @@ class Channel:
         elif action_type == 'ones':
             action = np.ones(self.ap_number, dtype=int) * 9
         elif action_type == 'fixed':
-            action = np.array([1, 5, 1, 5, 9, 3, 9, 3, 11, 7, 11, 7, 1, 5, 1, 5, 9, 3, 9, 3], dtype=int)
+            action = np.array([1, 5, 3, 3, 9, 11, 10, 7, 11, 5, 11, 5, 3, 3, 2, 5, 11, 7, 7, 9], dtype=int)
         else:
             raise TypeError("No such action type")
         for ap, ap_action in enumerate(avail):
@@ -616,6 +616,54 @@ class Channel:
         # ap_distribute_reward[ap_distribute_reward > 2] = 2
         return ap_distribute_reward - 0.5
 
+    def decentralized_reward_directional_cost(self, sinr, action):
+        sinr_clip = np.log2(sinr + 1)
+        sinr_clip[sinr_clip > gp.USER_QOS] = gp.USER_QOS
+        # sinr_clip /= gp.USER_QOS
+        self.user_qos[:, 0] -= sinr_clip
+        self.user_qos[:, 1] -= 1
+        rest = np.all(self.user_qos > 0, axis=1)
+        gain = np.logical_and(self.user_qos[:, 0] <= 0, self.user_qos[:, 1] >= 0)
+
+        sinr_clip[gain] += self.user_qos[gain, 0]
+
+        ap_observe_relation = np.stack([self.user_position] * self.ap_position.shape[0], axis=0) \
+                              - np.stack([self.ap_position] * self.user_position.shape[0], axis=1)
+        ap_observe_angle = np.arctan2(ap_observe_relation[:, :, 1], ap_observe_relation[:, :, 0]) * 180 / np.pi - 360
+        ap_observe_angle = ((150 - (np.ones([self.ap_number, self.user_number]).T * action).T * 30) - ap_observe_angle) % 360
+        ap_observe_angle_thre_up, ap_observe_angle_thre_do = np.ones(ap_observe_angle.shape), np.ones(ap_observe_angle.shape)
+        ap_observe_angle_thre_up *= np.expand_dims(30 - 30 * (action % 2), axis=1)
+        ap_observe_angle_thre_do *= np.expand_dims(90 + 30 * (action % 2), axis=1)
+        ap_observe_relation_edg = np.all(np.absolute(ap_observe_relation) < int(gp.REWARD_CAL_RANGE *
+                                                                                (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
+        ap_observe_angle = np.logical_and(ap_observe_angle > ap_observe_angle_thre_up,
+                                          ap_observe_angle < ap_observe_angle_thre_do)
+        ap_observe_angle[np.where(action == 12)[0], :] = 1
+        ap_observe_relation = np.all(np.absolute(ap_observe_relation) <
+                                     int(gp.REWARD_CAL_RANGE * (gp.ACCESS_POINTS_FIELD - 1) / 2), axis=2)
+        mask = np.logical_and(np.logical_and(ap_observe_angle, ap_observe_relation), ap_observe_relation_edg)
+        ap_distribute_reward = mask * sinr_clip
+        normalized_factor = np.sum(mask, axis=1)
+        normalized_factor[normalized_factor == 0] = 1
+        ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / \
+                               (gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
+        # normalization
+
+        if gp.USER_WAITING == 1:
+            self.user_position = np.zeros([0, 2])
+            self.user_qos = np.zeros([0, 2])
+            self.user_number = 0
+        else:
+            self.user_position = self.user_position[rest]
+            self.user_qos = self.user_qos[rest]
+            self.user_number = np.sum(rest)
+        ap_distribute_reward[np.abs(ap_distribute_reward) > 2] = 2
+        # ap_distribute_reward[np.where(action % 2 == 0)[0]] += 0.2
+        # ap_distribute_reward[np.where(action % 2 == 1)[0]] += 0.4
+        # ap_distribute_reward[np.where(action == 12)[0]] -= 0.2
+        ap_distribute_reward = ap_distribute_reward - 0.5
+        return ap_distribute_reward
+
 
 if __name__ == "__main__":
     x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
@@ -629,7 +677,7 @@ if __name__ == "__main__":
     # ["square", 150, 150], ["PPP", 250], ["Hex", 16, 13], [28, 15, 5e8], [28, 15, 5e8],
     #             ["alpha-exponential", "nakagami", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M, "zero_forcing"], "Stronger First",
     #             13 * 2 * np.sqrt(3) + 5
-    res_avg = np.zeros(20)
+    res_avg = np.zeros(gp.NUM_OF_ACCESSPOINT)
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
@@ -641,7 +689,7 @@ if __name__ == "__main__":
         #     tracker.print_diff()
     res_avg /= 1000
     print(res_avg, mean_sinr)
-    res_avg1 = np.zeros(20)
+    res_avg1 = np.zeros(gp.NUM_OF_ACCESSPOINT)
     mean_sinr = 0
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('updown')

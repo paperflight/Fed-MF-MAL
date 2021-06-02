@@ -7,11 +7,13 @@ from torch import optim
 from scipy.special import softmax as softmax_sci
 from torch.nn.utils import clip_grad_norm_
 import GLOBAL_PRARM as gp
+from torch import functional as F
 
-from ppo.basic_block import DQN
-# https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py
-# https://openai.com/blog/openai-baselines-ppo/
-# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/distributions.py
+from acer_fedstep.basic_block import DQN
+# https://github.com/ethancaballero/pytorch-a2c-ppo/blob/master/main.py
+# https://github.com/lnpalmer/A2C/blob/master/train.py
+# https://github.com/openai/baselines/blob/master/baselines/a2c/a2c.py
+
 
 class Agent:
     def __init__(self, args, env, index):
@@ -30,12 +32,10 @@ class Agent:
         self.reward_update_rate = args.reward_update_rate
         self.average_reward = 0
         self.neighbor_indice = np.zeros([])
-        self.clip_param = 0.2
-        # https://openai.com/blog/openai-baselines-ppo/
 
         self.online_net = DQN(args, self.action_space).to(device=args.device)
         if args.model:  # Load pretrained model if provided
-            self.model_path = os.path.join(args.model, "model" + str(index) + ".pth")
+            self.model_path = os.path.join(args.model, "model1" + ".pth")
             if os.path.isfile(self.model_path):
                 state_dict = torch.load(self.model_path, map_location='cpu')
                 # Always load tensors onto CPU by default, will shift to GPU if necessary
@@ -53,16 +53,45 @@ class Agent:
         self.online_net.train()
 
         self.target_net = DQN(args, self.action_space).to(device=args.device)
+        self.shared_net = DQN(args, self.action_space).to(device=args.device)
 
         self.online_dict = self.online_net.state_dict()
         self.target_dict = self.target_net.state_dict()
+
+        self.mse = torch.nn.MSELoss()
 
         self.update_target_net()
         self.target_net.train()
         for param in self.target_net.parameters():
             param.requires_grad = False
+        for param in self.shared_net.parameters():
+            param.requires_grad = False
 
         self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.learning_rate, eps=args.adam_eps)
+
+    def coral_func(self, src, tar):
+        """
+        inputs:
+            -src(Variable) : features extracted from source data
+            -tar(Variable) : features extracted from target data
+        return coral loss between source and target features
+        ref: Deep CORAL: Correlation Alignment for Deep Domain Adaptation \
+             (https://arxiv.org/abs/1607.01719
+        """
+        ns, nt = src.data.shape[0], tar.data.shape[0]
+        dim = src.data.shape[1]
+
+        ones_s = torch.ones(1, ns, dtype=torch.float32)
+        ones_t = torch.ones(1, nt, dtype=torch.float32)
+        tmp_s = torch.matmul(ones_s, src)
+        tmp_t = torch.matmul(ones_t, tar)
+        cov_s = (torch.matmul(src.T, src) -
+                 torch.matmul(tmp_s.T, tmp_s) / ns) / (ns - 1)
+        cov_t = (torch.matmul(tar.T, tar) -
+                 torch.matmul(tmp_t.T, tmp_t) / nt) / (nt - 1)
+
+        coral = torch.sum(self.mse(cov_s, cov_t)) / (4 * dim * dim)
+        return coral
 
     def update_neighbor_indice(self, neighbor_indices):
         self.neighbor_indice = neighbor_indices
@@ -79,7 +108,7 @@ class Agent:
         return self.online_net.state_dict()
 
     def set_state_dict(self, new_state_dict):
-        self.online_net.load_state_dict(new_state_dict)
+        self.shared_net.load_state_dict(new_state_dict)
         return
 
     def get_target_dict(self):
@@ -93,19 +122,29 @@ class Agent:
     def reset_noise(self):
         self.online_net.reset_noise()
 
+    # Acts based on single state (no batch)
+    def act(self, state, avail=None):
+        with torch.no_grad():
+            if avail is None:
+                return (self.online_net(state.unsqueeze(0)) * self.support).sum(2).argmax(1).item()
+            temp = (self.online_net(state.unsqueeze(0)) * self.support).sum(2) * torch.tensor(avail)
+            temp[:, avail == 0] = (torch.min(temp) - 100)
+            return temp.argmax(1).item()
+
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_e_greedy(self, state, available=None, epsilon=0.3, action_type='greedy'):  # High ε can reduce evaluation scores drastically
-        if action_type == 'greedy' or action_type == 'no_limit':
-            raise ValueError("Greedy action selection is banned in PPO")
+        if action_type == 'greedy':
+            return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state, available)
         elif action_type == 'boltzmann':
             return self.act_boltzmann(state, available)
+        elif action_type == 'no_limit':
+            return np.random.randint(0, self.action_space) if np.random.random() < epsilon else self.act(state)
 
     # Acts with an ε-greedy policy (used for evaluation only)
     def act_boltzmann(self, state, avail):  # High ε can reduce evaluation scores drastically
         with torch.no_grad():
-            res_policy, res_policy_log = self.online_net(state.unsqueeze(0))
-            res_action = self.boltzmann(res_policy, [avail])
-            return (res_action, (res_policy_log[0]).numpy())
+            res_policy = self.online_net(state.unsqueeze(0)).detach()
+            return self.boltzmann(res_policy, [avail])
 
     def boltzmann(self, res_policy, mask):
         sizeofres = res_policy.shape
@@ -137,7 +176,7 @@ class Agent:
                                 pipes.close()
                                 list_pro[key] = False
                                 continue
-                        pipes.send(self.act_boltzmann(obs, avial))
+                        pipes.send(self.act_boltzmann(obs, avial).numpy())
                         # convert back to numpy or cpu-tensor, or it will cause error since cuda try to run in
                         # another thread. Keep the gpu resource inside main thread
 
@@ -173,20 +212,19 @@ class Agent:
         # Sample transitions
         if gp.ONE_EPISODE_RUN > 0:
             self.average_reward = 0
-        idxs, states, actions, actions_logp, _, _, avails, returns, next_states, nonterminals, weights = \
+        idxs, states, actions, _, _, _, avails, returns, next_states, nonterminals, weights = \
             mem.sample(self.batch_size, self.average_reward)
 
         # critic update
         self.optimiser.zero_grad()
 
         # Calculate current state probabilities (online network noise already sampled)
-        ps_a, log_ps_a = self.online_net(states, False, log=True)
+        log_ps_a = self.online_net(states, False, log=True)
         # Log probabilities log p(s_t, ·; θonline)
 
         with torch.no_grad():
-            # Calculate nth next state probabilities
             self.target_net.reset_noise()  # Sample new target net noise
-            pns_a, _ = self.target_net(next_states, False)
+            pns_a = self.target_net(next_states, False)
             # Probabilities p(s_t+n, ·; θtarget)
             # Double-Q probabilities p(s_t+n, argmax_a[(z, p(s_t+n, a; θonline))]; θtarget)
 
@@ -211,31 +249,31 @@ class Agent:
             # m_u = m_u + p(s_t+n, a*)(b - l)
 
             # update the average reward
+            ps_a = self.online_net(states, False)
             self.average_reward = self.average_reward + \
                                   self.reward_update_rate * torch.mean(returns.unsqueeze(1) +
                                                                        torch.sum(pns_a * self.support, dim=1) -
-                                                                       torch.sum(ps_a.detach() * self.support, dim=1))
+                                                                       torch.sum(ps_a * self.support, dim=1))
 
         value_loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
+        value_coral_loss = self.coral_func(self.online_net(states, actor_or_critic=False, original=True),
+                                           self.shared_net(states, actor_or_critic=False, original=True))
 
         # Actor update
-        actions_logp_s = actions_logp.gather(-1, actions.unsqueeze(1))
-        curr_pol_out, curr_pol_out_log = self.online_net(states)
-        curr_pol_out_log = curr_pol_out_log.gather(-1, actions.unsqueeze(1))
-        ratios = torch.exp(curr_pol_out_log.squeeze(1) - actions_logp_s)
-
-        advantage = returns - torch.sum(ps_a.detach() * self.support, dim=-1)
-        advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-7)
-        surr1 = ratios * advantage
-        surr2 = torch.clamp(ratios, 1.0 - self.clip_param, 1.0 + self.clip_param) * advantage
-
-        entropy_loss = -(curr_pol_out * curr_pol_out_log).mean()
-
-        policy_loss = - torch.min(surr1, surr2).mean() - 1e-2 * entropy_loss
+        curr_pol_out_log = self.online_net(states, log=True)
+        policy_loss = - curr_pol_out_log.gather(-1, actions.unsqueeze(1)) * \
+                      (returns.unsqueeze(1) - self.online_net(states, False) * self.support)
         # log probs * advantage
+        policy_loss = policy_loss.mean()
+        curr_pol_out = self.online_net(states, log=False)
         policy_loss += -(curr_pol_out ** 2).mean() * 1e-3
+        policy_coral_loss = self.coral_func(self.online_net(states, original=True),
+                                            self.shared_net(states, original=True))
 
-        loss = (weights * value_loss).mean() + policy_loss
+        entropy_loss = -(curr_pol_out_log * curr_pol_out).mean()
+
+        loss = (weights * value_loss).mean() + policy_loss - 1e-2 * entropy_loss + \
+               1e-2 * (value_coral_loss + policy_coral_loss)
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 0.5)
@@ -262,8 +300,7 @@ class Agent:
     # Evaluates Q-value based on single state (no batch)
     def evaluate_q(self, state):
         with torch.no_grad():
-            temp, _ = self.online_net(state.unsqueeze(0), False)
-            return (temp * self.support).sum(-1).item()
+            return (self.online_net(state.unsqueeze(0), False) * self.support).sum(-1).item()
 
     def train(self):
         self.online_net.train()

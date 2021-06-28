@@ -186,4 +186,4 @@ def plot_result_hexagon(ap_position, action, coop_res, user_position, user_color
             ax.scatter(user_position[user, 0], user_position[user, 1], c='black', alpha=user_color[user])
 
     plt.show()
-    plt.close()
+    # plt.close()

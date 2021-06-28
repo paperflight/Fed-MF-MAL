@@ -213,6 +213,11 @@ class Channel:
         if self.user_distri_type == "PPP":
             if self.user_position.shape[0] == 0 or self.time % gp.USER_ADDING == 0:
                 self.user_number += np.random.poisson(self.user_distri_para)
+        elif self.user_distri_type == "PCP":
+            # user_distri_para: user number(PPP), cluster number(PPP), cluster size(Poisson)
+            if self.user_position.shape[0] == 0 or self.time % gp.USER_ADDING == 0:
+                self.user_number += int(np.random.poisson(self.user_distri_para[0]) / self.user_distri_para[1]) * \
+                                    self.user_distri_para[1]
         else:
             raise ValueError("Unknown User Distribution Type")
         if self.ap_distri_type == "Hex":
@@ -239,12 +244,31 @@ class Channel:
     def location_init(self):
         if gp.DEBUG and self.user_number <= 0 or self.ap_number <= 0:
             raise ValueError("User/ap number invalid")
-        if self.user_position.shape[0] == 0 or self.time % gp.USER_ADDING == 0:
-            new_user_position: np.ndarray = np.array([np.random.rand(2) * [self.area_size_l, self.area_size_w]
-                                                      for _ in range(self.user_number - self.user_position.shape[0])])
-            # new_user_position: np.ndarray = np.array([np.random.rand(2) * [50, 50]
-            #                                          for _ in range(self.user_number - self.user_position.shape[0])])
-            self.user_position = np.concatenate((new_user_position, self.user_position))
+        if self.user_distri_type == "PPP":
+            if self.user_position.shape[0] == 0 or self.time % gp.USER_ADDING == 0:
+                new_user_position: np.ndarray = np.array([np.random.rand(2) * [self.area_size_l, self.area_size_w]
+                                                          for _ in range(self.user_number - self.user_position.shape[0])])
+                self.user_position = np.concatenate((new_user_position, self.user_position))
+        elif self.user_distri_type == "PCP":
+            def generate_point(center_pos):
+                new_pos = np.array([-10e7, -10e7])
+                while not (0 < new_pos[0] < self.area_size_l and 0 < new_pos[1] < self.area_size_w):
+                    inside = 2 * np.pi * np.random.rand()
+                    new_pos = center_pos[2] * np.sqrt(np.random.rand()) * \
+                              np.array([np.cos(inside), np.sin(inside)]) + center_pos[0:2]
+                    # generate uniform distributed points inside the circle
+                return new_pos
+            if self.user_position.shape[0] == 0 or self.time % gp.USER_ADDING == 0:
+                new_center_position: np.ndarray = np.array([np.random.rand(3) *
+                                                            [self.area_size_l, self.area_size_w, self.user_distri_para[2]]
+                                                            for _ in range(self.user_distri_para[1])])
+                new_user_position: np.ndarray = np.array([generate_point(center)
+                                                          for _ in range(int((self.user_number - self.user_position.shape[0]) /
+                                                                             new_center_position.shape[0]))
+                                                          for center in new_center_position])
+                self.user_position = np.concatenate((new_user_position, self.user_position))
+        else:
+            raise ValueError("Unknown User Distribution Type")
         self.ap_position = \
             np.asarray([[x * 3 + 1, np.sqrt(3) * (y * 2 + 0.1 + x % 2)]
                         for x in range(int((gp.LENGTH_OF_FIELD - gp.ACCESSPOINT_SPACE) // (3 * gp.ACCESSPOINT_SPACE)) + 1)
@@ -480,7 +504,7 @@ class Channel:
         normalized_factor = np.sum(ap_observe_relation, axis=1)
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / \
-                               (gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
+                               (2 * gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
         # normalization
 
         if gp.USER_WAITING == 1:
@@ -491,7 +515,7 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
-        return ap_distribute_reward - 2.5
+        return (ap_distribute_reward - 1) * 2
 
     def decentralized_reward_step(self, sinr, aa):
         sinr_clip = np.log2(sinr + 1)
@@ -551,7 +575,7 @@ class Channel:
         normalized_factor = np.sum(np.logical_and(ap_observe_relation_edg, np.absolute(ap_observe_relation_cet - 1)), axis=1)
         normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / \
-                               (gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
+                               (2 * gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
         # normalization
 
         if gp.USER_WAITING == 1:
@@ -562,6 +586,11 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
+        ap_distribute_reward[np.abs(ap_distribute_reward) > 2] = 2
+        # ap_distribute_reward[np.where(action % 2 == 0)[0]] -= 0.1
+        # ap_distribute_reward[np.where(action % 2 == 1)[0]] -= 0.2
+        ap_distribute_reward[np.where(action == 12)[0]] = 0.2
+        ap_distribute_reward = ap_distribute_reward - 0.5
         return ap_distribute_reward
 
     def decentralized_reward_directional(self, sinr, action):
@@ -666,8 +695,16 @@ class Channel:
 
 
 if __name__ == "__main__":
+    # x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
+    #                                    ["PPP", gp.DENSE_OF_USERS],
+    #                                    ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
+    #                                    [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
+    #                                    [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
+    #                                    ["3GPP-InH-LOS", "rayleigh_indirect", False, gp.AP_UE_ALPHA, gp.NAKAGAMI_M,
+    #                                     'zero_forcing'],
+    #                                    "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
     x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
-                                       ["PPP", gp.DENSE_OF_USERS],
+                                       ["PCP", [gp.DENSE_OF_USERS, 5, 30]],
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
@@ -682,7 +719,7 @@ if __name__ == "__main__":
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
         mean_sinr += x.centralized_reward(sinr)
-        res = x.decentralized_reward_exclude_central(sinr, aa)
+        res = x.decentralized_reward(sinr, aa)
         sinr = np.log2(sinr + 1)
         res_avg += res
         # if _% 100 == 0:
@@ -692,9 +729,9 @@ if __name__ == "__main__":
     res_avg1 = np.zeros(gp.NUM_OF_ACCESSPOINT)
     mean_sinr = 0
     for _ in range(1000):
-        sinr, action, aa = x.test_sinr('updown')
+        sinr, action, aa = x.test_sinr('fixed')
         mean_sinr += x.centralized_reward(sinr)
-        res = x.decentralized_reward_exclude_central(sinr, aa)
+        res = x.decentralized_reward(sinr, aa)
         sinr = np.log2(sinr + 1)
         res_avg1 += res
     res_avg1 /= 1000

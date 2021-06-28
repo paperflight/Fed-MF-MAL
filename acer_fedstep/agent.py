@@ -10,9 +10,10 @@ import GLOBAL_PRARM as gp
 from torch import functional as F
 
 from acer_fedstep.basic_block import DQN
-# https://github.com/ethancaballero/pytorch-a2c-ppo/blob/master/main.py
-# https://github.com/lnpalmer/A2C/blob/master/train.py
-# https://github.com/openai/baselines/blob/master/baselines/a2c/a2c.py
+# https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9099064
+# https://arxiv.org/pdf/1607.01719.pdf
+# https://arxiv.org/pdf/1612.01939.pdf
+# https://arxiv.org/pdf/2103.00710.pdf
 
 
 class Agent:

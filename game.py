@@ -56,7 +56,7 @@ class Decentralized_Game:
         self.board_length_w = gp.WIDTH_OF_FIELD
         self.one_side_length = int(math.floor(gp.ACCESS_POINTS_FIELD - 1) / (2 * gp.SQUARE_STEP))
         self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
-                                       ["PCP", [gp.DENSE_OF_USERS, gp.PCP_CLUSTER_NUM, gp.PCP_MAX_CLUSTER_SIZE]],
+                                       ["PPP", gp.DENSE_OF_USERS],
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
@@ -89,7 +89,7 @@ class Decentralized_Game:
         np.random.seed(int(time.time() % 1 * 10e8))
         del self.environment
         self.environment = env.Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
-                                       ["PCP", [gp.DENSE_OF_USERS, gp.PCP_CLUSTER_NUM, gp.PCP_MAX_CLUSTER_SIZE]],
+                                       ["PPP", gp.DENSE_OF_USERS],
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
@@ -324,19 +324,21 @@ class Decentralized_Game:
             action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_exclude_central(self.environment.sinr_calculation(), actual_action)
+        sinr = self.environment.sinr_calculation()
+        overall_rew = self.environment.centralized_reward(sinr)
+        reward = self.environment.decentralized_reward_exclude_central(sinr, actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
-        if np.random.rand() < 0.5:
+        if np.random.rand() < 0.05:
             print(reward, action_re, actual_action)
-            myplt.plot_result_hexagon(self.environment.ap_position, action_re,
-                                      self.environment.coop_graph.hand_shake_result,
-                                      self.environment.user_position)
+            # myplt.plot_result_hexagon(self.environment.ap_position, action_re,
+            #                           self.environment.coop_graph.hand_shake_result,
+            #                           self.environment.user_position)
 
         return ap_state, action_re, action_logp, avil_action, \
-               [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
+               [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game(), overall_rew
 
     def step_p(self, accesspoint=None):
         """
@@ -376,13 +378,15 @@ class Decentralized_Game:
             action_re = action
 
         actual_action = self.environment.set_action(action_re)
-        reward = self.environment.decentralized_reward_exclude_central(self.environment.sinr_calculation(), actual_action)
+        sinr = self.environment.sinr_calculation()
+        overall_rew = self.environment.centralized_reward(sinr)
+        reward = self.environment.decentralized_reward_exclude_central(sinr, actual_action)
 
         if self.args.previous_action_observable:
             ap_state = self.add_previous_action(ap_state, actual_action)
 
         return ap_state, action_re, action_logp, avil_action, \
-               [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game()
+               [torch.tensor(dec_rew).to(device=self.args.device) for dec_rew in reward], self.end_game(), overall_rew
 
     def close(self):
         del self.environment.coop_graph

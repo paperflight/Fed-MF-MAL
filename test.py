@@ -15,7 +15,7 @@ import numpy as np
 from game import Decentralized_Game as Env
 
 
-def test_parallel(new_game, c_pipe, train_history_aps, eps):
+def test_parallel(new_game, c_pipe, overall, train_history_aps, eps):
     train_examples_aps = []
     reward_sum_aps = []
     for index in range(new_game.environment.ap_number):
@@ -25,9 +25,10 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
     for _ in range(eps):
         if done:
             done = new_game.reset()
-        state, action, _, avail, reward, done = new_game.step_p(c_pipe)  # Step
+        state, action, _, avail, reward, done, overall_reward = new_game.step_p(c_pipe)  # Step
         # print(action, reward)
         reward_sum_aps.append(reward)
+        overall.append(overall_reward)
 
     # reward_sum_aps = np.mean(reward_sum_aps, axis=0)
     reward_sum_aps = np.array(reward_sum_aps)
@@ -43,9 +44,10 @@ def test_parallel(new_game, c_pipe, train_history_aps, eps):
 
 
 # test whole system
-def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
+def test(args, T, dqn, val_mem_aps, metrics_all, metrics_aps, results_dir, evaluate=False):
     env = Env(args)
 
+    metrics_all['steps'].append(T)
     T_rewards_aps, T_Qs_aps = [], []
     for _ in range(env.environment.ap_number):
         metrics_aps[_]['steps'].append(T)
@@ -53,15 +55,15 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
         T_Qs_aps.append([])
 
     # Test performance over several episodes
-    reward_sum, done = [], gp.ONE_EPISODE_RUN > 0
+    reward_sum, reward_all, done = [], [], gp.ONE_EPISODE_RUN > 0
     for _ in range(args.evaluation_episodes):
         if done:
             done = env.reset()
-        state, action, _, avail, reward, done = env.step(dqn)
+        state, action, _, avail, reward, done, overall_reward = env.step(dqn)
 
         reward_sum.append(reward)
+        reward_all.append(overall_reward)
 
-    # reward_sum = np.mean(reward_sum, axis=0)
     # print(reward_sum)
     reward_sum = np.array(reward_sum)
     for index in range(env.environment.ap_number):
@@ -100,12 +102,15 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
             better_aps = False
         # reload the state dict if obtain a better model
 
+        metrics_all['reward'].append(reward_all)
+        torch.save(metrics_all, os.path.join(results_dir, 'All.pth'))
         for _ in range(env.environment.ap_number):
             # Append to results and save metrics
             metrics_aps[_]['rewards'].append(T_rewards_aps[_])
             metrics_aps[_]['Qs'].append(T_Qs_aps[_])
             torch.save(metrics_aps[_], os.path.join(results_dir, 'metrics' + str(_) + '.pth'))
 
+        _plot_line(metrics_all['steps'], metrics_all['reward'], 'All', path=results_dir)
         for _ in range(env.environment.ap_number):
             # Plot
             _plot_line(metrics_aps[_]['steps'], metrics_aps[_]['rewards'], 'Reward' + str(_), path=results_dir)
@@ -113,14 +118,15 @@ def test(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
 
     env.close()
     # Return average reward and Q-value
-    return (avg_reward_aps, avg_Q_aps, better_aps)
+    return (avg_reward_aps, avg_Q_aps, better_aps, np.mean(reward_all))
 
 
 # Test DQN
-def test_p(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
+def test_p(args, T, dqn, val_mem_aps, metrics_all, metrics_aps, results_dir, evaluate=False):
     env = Env(args)
 
-    T_rewards_aps, T_Qs_aps = [], []
+    metrics_all['steps'].append(T)
+    T_rewards_aps, T_Qs_aps, T_rewards = [], [], []
     for _ in range(env.environment.ap_number):
         metrics_aps[_]['steps'].append(T)
         T_rewards_aps.append([])
@@ -131,6 +137,7 @@ def test_p(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
     # make sure each subprocess can finish all the game (end with done)
     with multiprocessing.Manager() as manager:
         train_history_aps = manager.list()
+        overall = manager.list()
 
         p_pipe_list2 = []
         c_pipe_list2 = []
@@ -147,7 +154,7 @@ def test_p(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
         process_list = []
         for _ in range(num_cores):
             process = multiprocessing.Process(target=test_parallel,
-                                              args=(cp.deepcopy(env), c_pipe_list2[_], train_history_aps, num_eps))
+                                              args=(cp.deepcopy(env), c_pipe_list2[_], overall, train_history_aps, num_eps))
             process_list.append(process)
 
         for pro in process_list:
@@ -168,6 +175,8 @@ def test_p(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
             for index, memerys in enumerate(res):
                 for reward in memerys:
                     T_rewards_aps[index].append(reward)
+        for ele in overall:
+            T_rewards.append(ele)
 
     # Test Q-values over validation memory
     for index, val_mems in enumerate(val_mem_aps):
@@ -203,19 +212,22 @@ def test_p(args, T, dqn, val_mem_aps, metrics_aps, results_dir, evaluate=False):
             better_aps = False
         # reload the state dict if obtain a better model
 
+        metrics_all['reward'].append(T_rewards)
+        torch.save(metrics_all, os.path.join(results_dir, 'All.pth'))
         for _ in range(env.environment.ap_number):
             # Append to results and save metrics
             metrics_aps[_]['rewards'].append(T_rewards_aps[_])
             metrics_aps[_]['Qs'].append(T_Qs_aps[_])
             torch.save(metrics_aps[_], os.path.join(results_dir, 'metrics' + str(_) + '.pth'))
 
+        _plot_line(metrics_all['steps'], metrics_all['reward'], 'All', path=results_dir)
         for _ in range(env.environment.ap_number):
             # Plot
             _plot_line(metrics_aps[_]['steps'], metrics_aps[_]['rewards'], 'Reward' + str(_), path=results_dir)
             _plot_line(metrics_aps[_]['steps'], metrics_aps[_]['Qs'], 'Q' + str(_), path=results_dir)
 
     # Return average reward and Q-value
-    return (avg_reward_aps, avg_Q_aps, better_aps)
+    return (avg_reward_aps, avg_Q_aps, better_aps, np.mean(T_rewards))
 
 
 # Plots min, max and mean + standard deviation bars of a population over time

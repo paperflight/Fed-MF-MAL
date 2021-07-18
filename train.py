@@ -25,7 +25,7 @@ import torch.multiprocessing
 # TODO: When running in server, uncomment this line if needed
 import copy as cp
 
-from acer_critic_only.agent import Agent
+from acer_fedstep.agent import Agent
 from game import Decentralized_Game as Env
 from memory import ReplayMemory
 from test import test, test_p
@@ -85,14 +85,14 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='SIZE', help='
 parser.add_argument('--better-indicator', type=float, default=1.05, metavar='b',
                     help='The new model should be b times of old performance to be recorded')
 # TODO: Switch interval should not be large
-parser.add_argument('--learn-start', type=int, default=int(2000), metavar='STEPS',
+parser.add_argument('--learn-start', type=int, default=int(400), metavar='STEPS',
                     help='Number of steps before starting training')
 parser.add_argument('--evaluate', action='store_true', help='Evaluate only')
 parser.add_argument('--data-reinforce', action='store_true', help='DataReinforcement')
 # TODO: Change this after debug
-parser.add_argument('--evaluation-interval', type=int, default=2000, metavar='STEPS',
+parser.add_argument('--evaluation-interval', type=int, default=400, metavar='STEPS',
                     help='Number of training steps between evaluations')
-parser.add_argument('--evaluation-episodes', type=int, default=400, metavar='N',
+parser.add_argument('--evaluation-episodes', type=int, default=1000, metavar='N',
                     help='Number of evaluation episodes to average over')
 # TODO: Note that DeepMind's evaluation method is running the latest agent for 500K frames ever every 1M steps
 # TODO: Change this after debug
@@ -122,6 +122,7 @@ if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 
 metrics = {'steps': [], 'rewards': [], 'Qs': [], 'best_avg_reward': -float('inf')}
+metrics_all = {'steps': [], 'reward': []}
 np.random.seed(args.seed)
 torch.manual_seed(np.random.randint(1, 10000))
 # if torch.cuda.is_available() and not args.disable_cuda:
@@ -176,7 +177,7 @@ def run_game_once_parallel_random(new_game, train_history_aps_parallel, episode)
     while eps < episode:
         if done:
             done = new_game.reset()
-        state, action, action_logp, avail, reward, done = new_game.step()  # Step
+        state, action, action_logp, avail, reward, done, _ = new_game.step()  # Step
         for index_p, ele_p in enumerate(state):
             neighbor_indice = new_game.environment.coop_graph.neighbor_indices(index_p, True)
             action_patch = np.append(action, [-1])
@@ -237,7 +238,7 @@ if not gp.PARALLEL_EXICUSION:
     while T < args.evaluation_size:
         if done:
             done = env.reset()
-        state, action, action_logp, avail, reward, done = env.step()
+        state, action, action_logp, avail, reward, done, _ = env.step()
         for index, ele in enumerate(state):
             neighbor_indice = env.environment.coop_graph.neighbor_indices(index, True)
             action_patch = np.append(action, [-1])
@@ -305,7 +306,7 @@ else:
             for _ in range(env.environment.ap_number):
                 dqn[_].reset_noise()
 
-        state, action, action_logp, avail, reward, done = env.step(dqn)
+        state, action, action_logp, avail, reward, done, _ = env.step(dqn)
         epsilon = epsilon - args.epsilon_delta
         epsilon = np.clip(epsilon, a_min=args.epsilon_min, a_max=args.epsilon_max)
 
@@ -380,10 +381,11 @@ else:
                 dqn[index].eval()  # Set DQN (online network) to evaluation mode
 
             if gp.PARALLEL_EXICUSION:
-                aps_pack = test_p(args, T, dqn, val_mem_aps, matric, results_dir)  # Test
+                aps_pack = test_p(args, T, dqn, val_mem_aps, metrics_all, matric, results_dir)  # Test
             else:
-                aps_pack = test(args, T, dqn, val_mem_aps, matric, results_dir)  # Test
+                aps_pack = test(args, T, dqn, val_mem_aps, metrics_all, matric, results_dir)  # Test
 
+            log('T = ' + str(T) + ' / ' + str(aps_pack[3]) + '   Shapped Summed Reward.')
             if aps_pack[2]:
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + '   Better model, accepted.')
                 global_model.save(results_dir, 'Global_')

@@ -451,7 +451,7 @@ class Channel:
 
         sinr_clip[gain] += temp_qos[gain, 0]
 
-        return np.sum(sinr)
+        return np.sum(sinr_clip)
 
     def decentralized_reward_moving(self, sinr, aa):
         sinr_clip = np.log2(sinr + 1)
@@ -502,10 +502,10 @@ class Channel:
         ap_observe_relation = np.logical_and(ap_observe_relation_edg, ap_observe_relation)
         ap_distribute_reward = ap_observe_relation * sinr_clip
         normalized_factor = np.sum(ap_observe_relation, axis=1)
-        normalized_factor[normalized_factor == 0] = 1
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / \
                                (2 * gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
         # normalization
+        ap_distribute_reward[np.where(np.sum(ap_observe_relation, axis=1) == 0)[0]] = 2
 
         if gp.USER_WAITING == 1:
             self.user_position = np.zeros([0, 2])
@@ -541,6 +541,7 @@ class Channel:
         ap_distribute_reward = np.sum(ap_distribute_reward, axis=1) / \
                                (gp.USER_WAITING / gp.USER_ADDING * gp.DENSE_OF_USERS / self.ap_number)
         # normalization
+        ap_distribute_reward[np.where(np.sum(ap_observe_relation, axis=1) == 0)[0]] = 2
 
         if gp.USER_WAITING == 1:
             self.user_position = np.zeros([0, 2])
@@ -550,9 +551,7 @@ class Channel:
             self.user_position = self.user_position[rest]
             self.user_qos = self.user_qos[rest]
             self.user_number = np.sum(rest)
-        ap_distribute_reward[np.where(aa == 12)[0]] = -0.5
-        # ap_distribute_reward[ap_distribute_reward > 2] = 2
-        return ap_distribute_reward / 5
+        return ap_distribute_reward / 3 - 1
 
     def decentralized_reward_exclude_central(self, sinr, action):
         sinr_clip = np.log2(sinr + 1)
@@ -704,7 +703,7 @@ if __name__ == "__main__":
     #                                     'zero_forcing'],
     #                                    "Stronger First", gp.ACCESSPOINT_SPACE * 2 * np.sqrt(3) + 5)
     x = Channel(["square", gp.LENGTH_OF_FIELD, gp.WIDTH_OF_FIELD],
-                                       ["PCP", [gp.DENSE_OF_USERS, 5, 30]],
+                                       ["PCP", [gp.DENSE_OF_USERS, 20, 30]],
                                        ["Hex", gp.NUM_OF_ACCESSPOINT, gp.ACCESSPOINT_SPACE],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
                                        [gp.ACCESS_POINT_TRANSMISSION_EIRP, 0, gp.AP_TRANSMISSION_CENTER_FREUENCY],
@@ -719,7 +718,7 @@ if __name__ == "__main__":
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('random')
         mean_sinr += x.centralized_reward(sinr)
-        res = x.decentralized_reward(sinr, aa)
+        res = x.decentralized_reward_exclude_central(sinr, aa)
         sinr = np.log2(sinr + 1)
         res_avg += res
         # if _% 100 == 0:
@@ -731,7 +730,7 @@ if __name__ == "__main__":
     for _ in range(1000):
         sinr, action, aa = x.test_sinr('fixed')
         mean_sinr += x.centralized_reward(sinr)
-        res = x.decentralized_reward(sinr, aa)
+        res = x.decentralized_reward_exclude_central(sinr, aa)
         sinr = np.log2(sinr + 1)
         res_avg1 += res
     res_avg1 /= 1000

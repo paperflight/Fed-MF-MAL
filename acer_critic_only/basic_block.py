@@ -132,21 +132,6 @@ class DQN(nn.Module):
                                                  groups=2, padding=23),
                                        nn.BatchNorm2d(16), nn.LeakyReLU())
             self.conv_output_size = 144  # 41: 2: 1600
-        elif 'canonical' in args.architecture and '61obv' in args.architecture and '4uav' in args.architecture:
-            self.convs = nn.Sequential(nn.Conv2d(args.history_length_accesspoint, 16, 8, stride=3, padding=2), nn.LeakyReLU(),
-                                       nn.Conv2d(16, 32, 4, stride=2, padding=1), nn.BatchNorm2d(32), nn.LeakyReLU(),
-                                       nn.Conv2d(32, 64, 3, stride=1, padding=0), nn.BatchNorm2d(64), nn.LeakyReLU(),
-                                       nn.Conv2d(64, 64, 3, stride=1, padding=0), nn.BatchNorm2d(64), nn.LeakyReLU(),
-                                       # nn.MaxPool2d((args.dense_of_uav, 1)),
-                                       nn.Dropout2d(0.2))
-            self.conv_output_size = 3648
-            # 41: 2: 1600  # 61: 2: 2368 3: 3200 4: 4288  # 4 uav: 4992 /pooling 1216/ 3dim obs 3648
-        elif args.architecture == 'canonical_3d':
-            self.convs = nn.Sequential(nn.Conv3d(1, 32, (gp.OBSERVATION_DIMS, 8, 8), stride=(gp.OBSERVATION_DIMS, 3, 3),
-                                                 padding=(0, 2, 2)), nn.LeakyReLU(),
-                                       nn.Conv3d(32, 64, (gp.NUM_OF_UAV, 4, 4), stride=(1, 2, 2), padding=(0, 1, 1)), nn.LeakyReLU(),
-                                       nn.Conv3d(64, 64, (1, 3, 3), stride=1, padding=0), nn.LeakyReLU())
-            self.conv_output_size = 12160  # 2: 12160 3: 3200 4: 4288
         elif args.architecture == 'resnet8':
             net_args = {
                 "indim": gp.OBSERVATION_DIMS * gp.NUM_OF_UAV,
@@ -155,13 +140,6 @@ class DQN(nn.Module):
             }
             self.convs = ResNet(**net_args)
             self.conv_output_size = 64 * 4 * 4
-        elif 'data-efficient' in args.architecture and '61obv' in args.architecture and '4uav' in args.architecture:
-            self.convs = nn.Sequential(nn.Conv2d(args.history_length_accesspoint, 16, 5, stride=3, padding=2, dilation= 2), nn.LeakyReLU(),
-                                       nn.Conv2d(16, 32, 3, stride=1, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(), nn.MaxPool2d(2),
-                                       nn.Conv2d(32, 32, 3, stride=1, padding=0), nn.BatchNorm2d(32), nn.LeakyReLU(),
-                                       nn.MaxPool2d((2, 1)),
-                                       nn.Dropout2d(0.2))
-            self.conv_output_size = 1248  # 2: 12160 3: 3200 4: 4288
         else:
             raise TypeError('No such strucure')
         # TODO: Calculate the output_size carefully!!!

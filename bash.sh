@@ -3,8 +3,8 @@
 #SBATCH --job-name=alphavr
 # #SBATCH --gres=gpu
 #SBATCH --ntasks=6
-#SBATCH --mem=40000
-#SBATCH --time=0-72:00
+#SBATCH --mem=20000
+#SBATCH --time=0-10:00
 # #SBATCH --constrain=v100
 #SBATCH --constrain=skylake
 
